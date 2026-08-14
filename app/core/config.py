@@ -85,7 +85,11 @@ class Settings(BaseSettings):
     COMPLIANCE_ROW_BAND_TOLERANCE: float = 0.05  # y-band used for row clustering
 
     # --- Freshness classifier --------------------------------------------
-    FRESHNESS_WEIGHTS: Path = BASE_DIR / "models" / "weights" / "freshness_mobilenetv2.pt"
+    # Trained on the leak-free cluster split. The superseded
+    # freshness_mobilenetv2.pt was fitted on a partition where 30.2% of the
+    # held-out set were near-duplicates of training images; defaulting to it
+    # would serve a model whose published accuracy does not hold.
+    FRESHNESS_WEIGHTS: Path = BASE_DIR / "models" / "weights" / "freshness_mobilenetv2_clean.pt"
     FRESHNESS_BACKBONE: str = "mobilenet_v2"  # "mobilenet_v2" | "resnet50"
     FRESHNESS_INPUT_SIZE: int = 224
     FRESHNESS_CLASSES: List[str] = Field(

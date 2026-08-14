@@ -146,16 +146,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             }
             print(f"  + {arc}  ({size_mb} MB)")
 
-        # Sibling exports of the same checkpoints -- ONNX and TorchScript are
-        # what the container actually serves, so shipping only the .pt would
-        # leave the runtime falling back to eager PyTorch.
+        # Sibling exports of the *configured* checkpoints -- ONNX and TorchScript
+        # are what the container actually serves, so shipping only the .pt would
+        # leave the runtime on eager PyTorch.
+        #
+        # Matched by stem rather than by globbing the directory: models/weights
+        # accumulates superseded checkpoints, and a blanket glob would ship the
+        # freshness model trained on the contaminated partition alongside the
+        # current one, leaving the client a file that looks equally valid.
+        shipped = {v["file"] for v in manifest["weights"].values()}  # type: ignore[union-attr]
+        stems = {path.stem for path in resolved.values()}
         for extra in sorted((ROOT / "models" / "weights").glob("*")):
             if extra.suffix.lower() not in WEIGHT_SUFFIXES:
                 continue
+            # "freshness_x.torchscript.pt" has stem "freshness_x.torchscript".
+            base = extra.stem.split(".")[0]
+            if base not in stems:
+                continue
             arc = f"models/weights/{extra.name}"
-            if arc in {v["file"] for v in manifest["weights"].values()}:  # type: ignore[union-attr]
+            if arc in shipped:
                 continue
             archive.write(extra, arc)
+            shipped.add(arc)
             print(f"  + {arc}  ({round(extra.stat().st_size / 1e6, 2)} MB)")
 
         for name in REQUIRED_DOCS + OPTIONAL_DOCS:

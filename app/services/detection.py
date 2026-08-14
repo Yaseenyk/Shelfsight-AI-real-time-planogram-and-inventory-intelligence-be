@@ -193,9 +193,47 @@ class YoloDetector:
                 self.device,
                 len(self._names),
             )
+            self._warn_if_generic()
             if settings.DETECTION_WARMUP:
                 self._warmup()
             return True
+
+    #: Classes present in the COCO baseline and absent from any shelf detector.
+    _COCO_TELLS = frozenset({"person", "bicycle", "car", "traffic light", "fire hydrant"})
+
+    @property
+    def is_generic_baseline(self) -> bool:
+        """True when the loaded model is the stock COCO detector.
+
+        Worth detecting because every path to it is silent. The weights file is
+        gitignored, so a fresh clone has none; Ultralytics then downloads
+        yolov8n.pt automatically; the service loads it without error and the
+        health endpoint reports `detector_loaded: true`. The system looks
+        entirely well and reports people and cars on a shelf photograph.
+
+        Identified by the class vocabulary rather than the filename, so a
+        renamed or relocated copy is caught just the same.
+        """
+        if not self._names:
+            return False
+        lowered = {name.lower() for name in self._names.values()}
+        return len(self._COCO_TELLS & lowered) >= 3
+
+    def _warn_if_generic(self) -> None:
+        if not self.is_generic_baseline:
+            return
+        logger.warning(
+            "=" * 72 + "\n  The loaded detector is the generic COCO model (%d classes), not a"
+            "\n  shelf detector. It recognises people, cars and animals -- shelf"
+            "\n  results will be meaningless."
+            "\n"
+            "\n  Loaded from : %s"
+            "\n  Fix         : point DETECTION_WEIGHTS at your trained checkpoint,"
+            "\n                or copy the supplied models/weights folder into place."
+            "\n" + "=" * 72,
+            len(self._names),
+            self.weights,
+        )
 
     def _resolve_weights(self) -> Optional[Path]:
         """Return a usable checkpoint path, downloading the base model if allowed."""
@@ -277,9 +315,7 @@ class YoloDetector:
         mistake a broken pipeline for an empty shelf.
         """
         if not self.load():
-            raise DetectorUnavailableError(
-                self._load_failure or "Detector is unavailable"
-            )
+            raise DetectorUnavailableError(self._load_failure or "Detector is unavailable")
 
         meta = describe(image)
         started = time.perf_counter()
@@ -332,9 +368,7 @@ class YoloDetector:
             class_counts=counts,
         )
 
-    def predict_source(
-        self, source: ImageSource, conf: Optional[float] = None
-    ) -> DetectionResult:
+    def predict_source(self, source: ImageSource, conf: Optional[float] = None) -> DetectionResult:
         """Ingest bytes or a path, then detect. Convenience for API/benchmark."""
         return self.predict_with_metrics(load_image(source), conf=conf)
 

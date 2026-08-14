@@ -52,8 +52,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     # Everything mutable lives under /app/runtime, which compose mounts as a
     # volume — so weights, uploads and the database survive `docker compose down`.
     DATABASE_URL=sqlite:////app/runtime/shelfsight.db \
-    DETECTION_WEIGHTS=/app/runtime/weights/yolov8n.pt \
-    FRESHNESS_WEIGHTS=/app/runtime/weights/freshness_mobilenetv2.pt \
+    DETECTION_WEIGHTS=/app/runtime/weights/shelfsight-sku110k.pt \
+    FRESHNESS_WEIGHTS=/app/runtime/weights/freshness_mobilenetv2_clean.pt \
     UPLOAD_DIR=/app/runtime/uploads \
     REPORTS_DIR=/app/runtime/reports \
     OLLAMA_BASE_URL=http://ollama:11434 \

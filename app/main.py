@@ -100,6 +100,12 @@ async def health() -> HealthResponse:
 
     ollama = await get_ollama_client().status()
     detector = get_detector()
+    # Report the classifier without forcing a load: /health is polled, and
+    # loading a model as a side effect of a health check would make the
+    # first poll after startup pay for it.
+    from app.services.freshness import get_freshness_service  # noqa: PLC0415
+
+    freshness = get_freshness_service()
     return HealthResponse(
         status="ok" if database == "ok" else "degraded",
         app=settings.APP_NAME,
@@ -109,7 +115,12 @@ async def health() -> HealthResponse:
         detector_loaded=detector.is_ready,
         detector_model=detector.version if detector.is_ready else None,
         detector_classes=len(detector.class_names) or None,
+        detector_is_generic_baseline=detector.is_generic_baseline,
         detector_error=detector.load_failure,
+        freshness_loaded=freshness.is_ready,
+        freshness_model=freshness.version if freshness.is_ready else None,
+        freshness_trained_at=freshness.trained_at if freshness.is_ready else None,
+        freshness_error=freshness.load_failure,
         ollama_reachable=ollama.reachable,
     )
 

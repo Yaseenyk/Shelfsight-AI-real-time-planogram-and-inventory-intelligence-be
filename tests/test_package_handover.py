@@ -158,3 +158,37 @@ def test_refuses_when_the_config_names_no_weights(project: Path, tmp_path: Path)
     (project / ".env.example").write_text("APP_NAME=ShelfSight\n", encoding="utf-8")
 
     assert main(["--out", str(tmp_path / "bundle.zip")]) == 1
+
+
+def test_does_not_ship_superseded_checkpoints(project: Path, tmp_path: Path):
+    """models/weights accumulates old models; only the configured ones ship.
+
+    A blanket glob would hand the client the freshness model trained on the
+    contaminated partition beside the current one, with nothing to tell them
+    apart.
+    """
+    _add_weights(project, "detector.pt", "freshness.pt")
+    _add_weights(project, "freshness_OLD_contaminated.pt", "detector_v1_leaky.onnx")
+    out = tmp_path / "bundle.zip"
+
+    assert main(["--out", str(out)]) == 0
+    with zipfile.ZipFile(out) as archive:
+        names = archive.namelist()
+
+    assert "models/weights/freshness_OLD_contaminated.pt" not in names
+    assert "models/weights/detector_v1_leaky.onnx" not in names
+    assert "models/weights/detector.pt" in names
+    assert "models/weights/freshness.pt" in names
+
+
+def test_ships_torchscript_and_onnx_of_configured_weights(project: Path, tmp_path: Path):
+    _add_weights(project, "detector.pt", "freshness.pt", "freshness.onnx")
+    (project / "models" / "weights" / "freshness.torchscript.pt").write_bytes(b"ts" * 32)
+    out = tmp_path / "bundle.zip"
+
+    main(["--out", str(out)])
+    with zipfile.ZipFile(out) as archive:
+        names = archive.namelist()
+
+    assert "models/weights/freshness.onnx" in names
+    assert "models/weights/freshness.torchscript.pt" in names

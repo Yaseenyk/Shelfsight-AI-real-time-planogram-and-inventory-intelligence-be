@@ -90,7 +90,18 @@ class HealthResponse(BaseModel):
     detector_loaded: bool
     detector_model: Optional[str] = None
     detector_classes: Optional[int] = None
+    #: True when the loaded detector is the stock COCO model rather than a
+    #: shelf detector. Every route to that state is silent, so it is
+    #: surfaced here: the service loads cleanly and reports itself ready.
+    detector_is_generic_baseline: bool = False
     detector_error: Optional[str] = None
+    #: The freshness classifier was invisible here, so there was no way to
+    #: confirm which checkpoint a deployment had actually loaded without
+    #: reading server logs.
+    freshness_loaded: bool = False
+    freshness_model: Optional[str] = None
+    freshness_trained_at: Optional[str] = None
+    freshness_error: Optional[str] = None
     ollama_reachable: Optional[bool] = None
 
 
