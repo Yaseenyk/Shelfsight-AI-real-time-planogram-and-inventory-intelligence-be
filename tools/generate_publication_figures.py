@@ -49,8 +49,14 @@ EXPORT_JSON = "export_manifest.json"
 
 #: LaTeX escapes for dataset class names ("Cheetoz 30g & 90g" would break a table).
 LATEX_ESCAPES = {
-    "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
-    "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
     "^": r"\textasciicircum{}",
 }
 
@@ -121,9 +127,7 @@ def figure_detection_pr(detection: Dict[str, Any], out_dir: Path) -> List[Path]:
     selected = list(dict.fromkeys(selected))  # de-dup when the list is short
 
     series = {label: [tuple(point) for point in curves[label]] for label in selected}
-    average_precision = {
-        label: per_class.get(label, {}).get("map_50", 0.0) for label in selected
-    }
+    average_precision = {label: per_class.get(label, {}).get("map_50", 0.0) for label in selected}
 
     omitted = len(ranked) - len(selected)
     title = f"Detection precision-recall (test split, mAP@0.5 = {detection.get('map_50', 0):.3f})"
@@ -175,12 +179,18 @@ def figure_latency(export: Dict[str, Any], out_dir: Path) -> List[Path]:
     fig, ax = plt.subplots(figsize=(6.2, 1.1 * len(components) + 1.6))
 
     ax.barh(
-        [p + height / 2 for p in positions], torch_ms, height=height,
-        color=SERIES_COLORS[0], label="PyTorch eager",
+        [p + height / 2 for p in positions],
+        torch_ms,
+        height=height,
+        color=SERIES_COLORS[0],
+        label="PyTorch eager",
     )
     ax.barh(
-        [p - height / 2 for p in positions], onnx_ms, height=height,
-        color=SERIES_COLORS[1], label="ONNX Runtime",
+        [p - height / 2 for p in positions],
+        onnx_ms,
+        height=height,
+        color=SERIES_COLORS[1],
+        label="ONNX Runtime",
     )
 
     ax.set_yticks(list(positions), components)
@@ -192,12 +202,19 @@ def figure_latency(export: Dict[str, Any], out_dir: Path) -> List[Path]:
 
     span = max(torch_ms + onnx_ms) or 1.0
     for index, row in enumerate(rows):
-        ax.text(row["pytorch_ms"] + span * 0.015, index + height / 2,
-                f"{row['pytorch_ms']:.1f} ms", va="center", fontsize=8)
-        speedup = f"{row['onnx_ms']:.1f} ms ({row['speedup']:.1f}x faster)" if row["speedup"] \
+        ax.text(
+            row["pytorch_ms"] + span * 0.015,
+            index + height / 2,
+            f"{row['pytorch_ms']:.1f} ms",
+            va="center",
+            fontsize=8,
+        )
+        speedup = (
+            f"{row['onnx_ms']:.1f} ms ({row['speedup']:.1f}x faster)"
+            if row["speedup"]
             else f"{row['onnx_ms']:.1f} ms"
-        ax.text(row["onnx_ms"] + span * 0.015, index - height / 2, speedup,
-                va="center", fontsize=8)
+        )
+        ax.text(row["onnx_ms"] + span * 0.015, index - height / 2, speedup, va="center", fontsize=8)
 
     ax.set_xlim(0, span * 1.35)
     return [save_figure(fig, out_dir / "latency_benchmark.png")]
@@ -231,8 +248,14 @@ def _latency_rows(export: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 # ------------------------------------------------------------ LaTeX tables --
-def _table(caption: str, label: str, spec: str, header: Sequence[str],
-           rows: Sequence[Sequence[str]], note: Optional[str] = None) -> str:
+def _table(
+    caption: str,
+    label: str,
+    spec: str,
+    header: Sequence[str],
+    rows: Sequence[Sequence[str]],
+    note: Optional[str] = None,
+) -> str:
     lines = [
         r"\begin{table}[t]",
         r"\centering",
@@ -256,26 +279,34 @@ def table_detection(detection: Dict[str, Any]) -> str:
     rows: List[List[str]] = []
     for label in sorted(per_class, key=lambda k: per_class[k].get("map_50", 0), reverse=True):
         values = per_class[label]
-        rows.append([
-            escape_latex(label),
-            f"{values.get('precision', 0):.3f}",
-            f"{values.get('recall', 0):.3f}",
-            f"{values.get('map_50', 0):.3f}",
-            f"{values.get('map_50_95', 0):.3f}",
-        ])
+        rows.append(
+            [
+                escape_latex(label),
+                f"{values.get('precision', 0):.3f}",
+                f"{values.get('recall', 0):.3f}",
+                f"{values.get('map_50', 0):.3f}",
+                f"{values.get('map_50_95', 0):.3f}",
+            ]
+        )
 
-    rows.append([
-        r"\textbf{Overall (mean)}",
-        rf"\textbf{{{detection.get('precision', 0):.3f}}}",
-        rf"\textbf{{{detection.get('recall', 0):.3f}}}",
-        rf"\textbf{{{detection.get('map_50', 0):.3f}}}",
-        rf"\textbf{{{detection.get('map_50_95', 0):.3f}}}",
-    ])
+    rows.append(
+        [
+            r"\textbf{Overall (mean)}",
+            rf"\textbf{{{detection.get('precision', 0):.3f}}}",
+            rf"\textbf{{{detection.get('recall', 0):.3f}}}",
+            rf"\textbf{{{detection.get('map_50', 0):.3f}}}",
+            rf"\textbf{{{detection.get('map_50_95', 0):.3f}}}",
+        ]
+    )
 
-    images = detection.get("images", 60)
+    # No numeric fallback. A hard-coded default here silently captioned the
+    # table with a count from an earlier, much smaller dataset, and a specific
+    # wrong number reads as authoritative in a way an omitted one does not.
+    images = detection.get("images")
+    scope = f"{images}-Image Holdout Test Split" if images else "Holdout Test Split"
+    classes = f"{len(per_class)} Class{'es' if len(per_class) != 1 else ''}"
     return _table(
-        caption=f"Object Detection Performance ({len(per_class)} Classes, "
-        f"{images}-Image Holdout Test Split)",
+        caption=f"Object Detection Performance ({classes}, {scope})",
         label="tab:detection",
         spec="lrrrr",
         header=["Class", "Precision", "Recall", "mAP@0.5", "mAP@0.5:0.95"],
@@ -292,22 +323,26 @@ def table_freshness(freshness: Dict[str, Any]) -> str:
 
     for label in labels:
         values = per_class.get(label) or {}
-        rows.append([
-            escape_latex(label.capitalize()),
-            f"{values.get('precision', 0):.3f}",
-            f"{values.get('recall', 0):.3f}",
-            f"{values.get('f1-score', values.get('f1', 0)):.3f}",
-            f"{int(values.get('support', 0))}",
-        ])
+        rows.append(
+            [
+                escape_latex(label.capitalize()),
+                f"{values.get('precision', 0):.3f}",
+                f"{values.get('recall', 0):.3f}",
+                f"{values.get('f1-score', values.get('f1', 0)):.3f}",
+                f"{int(values.get('support', 0))}",
+            ]
+        )
 
     total_support = sum(int((per_class.get(lbl) or {}).get("support", 0)) for lbl in labels)
-    rows.append([
-        r"\textbf{Macro avg}",
-        rf"\textbf{{{_macro(per_class, labels, 'precision'):.3f}}}",
-        rf"\textbf{{{_macro(per_class, labels, 'recall'):.3f}}}",
-        rf"\textbf{{{freshness.get('f1_macro', 0):.3f}}}",
-        rf"\textbf{{{total_support}}}",
-    ])
+    rows.append(
+        [
+            r"\textbf{Macro avg}",
+            rf"\textbf{{{_macro(per_class, labels, 'precision'):.3f}}}",
+            rf"\textbf{{{_macro(per_class, labels, 'recall'):.3f}}}",
+            rf"\textbf{{{freshness.get('f1_macro', 0):.3f}}}",
+            rf"\textbf{{{total_support}}}",
+        ]
+    )
 
     accuracy = freshness.get("top1_accuracy", 0)
     return _table(
@@ -375,8 +410,9 @@ def generate(out_dir: Path, tables_only: bool = False) -> Dict[str, Any]:
 
     if tables:
         combined = "\n\n".join(
-            tables[key] for key in ("table_i_detection", "table_ii_freshness",
-                                    "table_iii_latency") if key in tables
+            tables[key]
+            for key in ("table_i_detection", "table_ii_freshness", "table_iii_latency")
+            if key in tables
         )
         (out_dir / "ieee_tables.tex").write_text(combined + "\n", encoding="utf-8")
         logger.info("Wrote %s", out_dir / "ieee_tables.tex")
@@ -387,7 +423,9 @@ def generate(out_dir: Path, tables_only: bool = False) -> Dict[str, Any]:
         "missing": [
             name
             for name, payload in (
-                (DETECTION_JSON, detection), (FRESHNESS_JSON, freshness), (EXPORT_JSON, export)
+                (DETECTION_JSON, detection),
+                (FRESHNESS_JSON, freshness),
+                (EXPORT_JSON, export),
             )
             if payload is None
         ],

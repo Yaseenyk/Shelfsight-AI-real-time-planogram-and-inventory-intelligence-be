@@ -59,14 +59,20 @@ def evaluate_detector(
         "map_50_95": round(float(box.map), 4),
         "precision": round(float(box.mp), 4),
         "recall": round(float(box.mr), 4),
-        "f1": round(
-            2 * float(box.mp) * float(box.mr) / (float(box.mp) + float(box.mr)), 4
-        )
+        "f1": round(2 * float(box.mp) * float(box.mr) / (float(box.mp) + float(box.mr)), 4)
         if (float(box.mp) + float(box.mr)) > 0
         else 0.0,
         "speed_ms": {k: round(float(v), 3) for k, v in (metrics.speed or {}).items()},
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Record how many images the figures describe. Without it the table caption
+    # downstream fell back to a hard-coded count left over from an earlier,
+    # much smaller dataset -- a specific wrong number, which reads as
+    # authoritative in a way that a missing one does not.
+    images = _count_split_images(data_yaml, "test")
+    if images is not None:
+        result["images"] = images
 
     # Per-class rows for Table I: the mean alone hides which SKUs the detector
     # actually fails on, which is the interesting part of a 19-class result.
@@ -173,6 +179,36 @@ def evaluate_freshness(
     scored["distribution"] = run.get("distribution")
     scored["evaluated_at"] = datetime.now(timezone.utc).isoformat()
     return scored
+
+
+def _count_split_images(data_yaml: Path, split: str) -> Optional[int]:
+    """How many images a split holds, for the figure captions.
+
+    Ultralytics accepts either a directory or a text file listing image paths,
+    so both forms are handled. Returns None rather than guessing when the config
+    cannot be read: an absent count is honest, a wrong one is not.
+    """
+    try:
+        import yaml  # noqa: PLC0415
+
+        config = yaml.safe_load(Path(data_yaml).read_text(encoding="utf-8"))
+        target = config.get(split)
+        if not target:
+            return None
+        path = Path(target)
+        if not path.is_absolute():
+            path = Path(config.get("path", data_yaml.parent)) / target
+        if path.is_file():
+            return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        if path.is_dir():
+            return sum(
+                1
+                for entry in path.iterdir()
+                if entry.is_file() and entry.suffix.lower() in {".jpg", ".jpeg", ".png"}
+            )
+    except Exception:  # noqa: BLE001 - a caption detail must not fail evaluation
+        return None
+    return None
 
 
 def save(name: str, payload: Dict[str, Any]) -> Path:
