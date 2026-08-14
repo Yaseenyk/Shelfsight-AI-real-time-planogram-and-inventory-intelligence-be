@@ -150,6 +150,44 @@ def test_split_is_deterministic_for_a_seed(tmp_path: Path):
     assert first.val_count == second.val_count
 
 
+def test_three_way_split_holds_out_a_test_set(tmp_path: Path):
+    source = tmp_path / "src"
+    _write_images(source / "fresh", [f"f{i}" for i in range(10)])
+    _write_images(source / "rotten", [f"r{i}" for i in range(10)])
+
+    out = tmp_path / "out"
+    stats = merge_datasets([source], out, val_split=0.2, test_split=0.2, seed=3)
+
+    assert stats.train_count == 12 and stats.val_count == 4 and stats.test_count == 4
+    assert (out / "test" / "fresh").is_dir()
+    # Every image lands in exactly one split.
+    assert stats.train_count + stats.val_count + stats.test_count == 20
+
+
+def test_three_way_split_shares_no_images_between_splits(tmp_path: Path):
+    """Test data leaking into train is the failure that invalidates a paper."""
+    source = tmp_path / "src"
+    _write_images(source / "fresh", [f"f{i}" for i in range(12)])
+
+    out = tmp_path / "out"
+    merge_datasets([source], out, val_split=0.25, test_split=0.25, seed=9)
+
+    contents = {}
+    for split in ("train", "val", "test"):
+        contents[split] = {p.read_bytes() for p in (out / split / "fresh").glob("*.jpg")}
+    assert not contents["train"] & contents["val"]
+    assert not contents["train"] & contents["test"]
+    assert not contents["val"] & contents["test"]
+
+
+def test_test_split_is_absent_by_default(tmp_path: Path):
+    source = tmp_path / "src"
+    _write_images(source / "fresh", ["a", "b", "c", "d"])
+    stats = merge_datasets([source], tmp_path / "out", val_split=0.25)
+    assert stats.test_count == 0
+    assert not (tmp_path / "out" / "test").exists()
+
+
 def test_missing_class_is_reported_not_silently_empty(tmp_path: Path):
     source = tmp_path / "src"
     _write_images(source / "fresh", ["a", "b"])

@@ -205,6 +205,32 @@ if (-not (Test-Path $FeEnv)) {
 & $VenvPython -m app.db.init_db --seed
 if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "The database could not be prepared" @("Delete shelfsight.db and run START.bat again.") }
 Write-Ok "Database ready (sample products loaded)"
+
+# Trained weights are deliberately not stored in the repository (binaries do not
+# belong in git), so a fresh clone arrives without them. This must be reported
+# loudly: Ultralytics silently downloads the untrained COCO baseline when the
+# configured detector file is absent, so the system would start, appear healthy,
+# and quietly report people and cars instead of shelf products. A demo failing
+# that way is far worse than one that refuses to start.
+$missingWeights = @()
+foreach ($line in (Get-Content (Join-Path $BackendDir ".env") -ErrorAction SilentlyContinue)) {
+    if ($line -match '^\s*(DETECTION_WEIGHTS|FRESHNESS_WEIGHTS)\s*=\s*(.+?)\s*$') {
+        $wp = Join-Path $BackendDir ($Matches[2] -replace '/', '\')
+        if (-not (Test-Path $wp)) { $missingWeights += "$($Matches[1]) -> $($Matches[2])" }
+    }
+}
+if ($missingWeights.Count -gt 0) {
+    Write-Host ""
+    Write-Warn2 "WARNING - trained models are missing:"
+    foreach ($m in $missingWeights) { Write-Warn2 "    $m" }
+    Write-Warn2 ""
+    Write-Warn2 "  The dashboard will run, but photo analysis will not work"
+    Write-Warn2 "  correctly. Copy the 'models\weights' folder supplied with this"
+    Write-Warn2 "  project into:"
+    Write-Warn2 "    $BackendDir\models\weights\"
+    Write-Warn2 "  then run START.bat again."
+    Write-Host ""
+}
 Pop-Location
 
 # ------------------------------------------------------ 6. Frontend deps --

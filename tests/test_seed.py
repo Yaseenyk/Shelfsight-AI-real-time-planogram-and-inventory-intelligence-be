@@ -100,45 +100,45 @@ def test_second_boot_changes_nothing(db):  # noqa: ANN001
     assert len(db.execute(select(Product)).scalars().all()) == len(SEED_PRODUCTS)
 
 
+# Reference the catalogue rather than literal SKUs: renaming a product (as the
+# India localisation did) should not break behavioural tests.
+FIRST_SKU = SEED_PRODUCTS[0]["sku"]
+SECOND_SKU = SEED_PRODUCTS[1]["sku"]
+
+
 def test_operator_edits_survive_a_restart(db):  # noqa: ANN001
     seed_if_empty(db)
 
-    product = db.execute(
-        select(Product).where(Product.sku == "SKU-WATER-500")
-    ).scalar_one()
+    product = db.execute(select(Product).where(Product.sku == FIRST_SKU)).scalar_one()
     product.system_stock = 999
     db.commit()
 
     seed_if_empty(db)
 
-    refreshed = db.execute(
-        select(Product).where(Product.sku == "SKU-WATER-500")
-    ).scalar_one()
+    refreshed = db.execute(select(Product).where(Product.sku == FIRST_SKU)).scalar_one()
     assert refreshed.system_stock == 999
 
 
 def test_deleted_product_is_not_resurrected_on_restart(db):  # noqa: ANN001
     seed_if_empty(db)
-    victim = db.execute(select(Product).where(Product.sku == "SKU-COLA-330")).scalar_one()
+    victim = db.execute(select(Product).where(Product.sku == SECOND_SKU)).scalar_one()
     db.delete(victim)
     db.commit()
 
     seed_if_empty(db)  # catalogue is non-empty, so nothing is re-added
 
     remaining = {p.sku for p in db.execute(select(Product)).scalars().all()}
-    assert "SKU-COLA-330" not in remaining
+    assert SECOND_SKU not in remaining
 
 
 def test_seed_products_only_adds_missing_rows(db):  # noqa: ANN001
-    db.add(Product(sku="SKU-WATER-500", name="Pre-existing", system_stock=1))
+    db.add(Product(sku=FIRST_SKU, name="Pre-existing", system_stock=1))
     db.flush()
 
     added = seed_products(db)
     assert added == len(SEED_PRODUCTS) - 1
 
-    survivor = db.execute(
-        select(Product).where(Product.sku == "SKU-WATER-500")
-    ).scalar_one()
+    survivor = db.execute(select(Product).where(Product.sku == FIRST_SKU)).scalar_one()
     assert survivor.name == "Pre-existing"
 
 
