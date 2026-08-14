@@ -212,11 +212,31 @@ Write-Ok "Database ready (sample products loaded)"
 # configured detector file is absent, so the system would start, appear healthy,
 # and quietly report people and cars instead of shelf products. A demo failing
 # that way is far worse than one that refuses to start.
+# Ask the application what it will load rather than parsing .env directly.
+# Parsing only catches weights the file happens to name; when .env omits them --
+# which is the common case, since .env is often just API keys -- the settings
+# layer falls back to the COCO baseline and a file-parsing check stays silent on
+# exactly the failure it exists to catch.
 $missingWeights = @()
-foreach ($line in (Get-Content (Join-Path $BackendDir ".env") -ErrorAction SilentlyContinue)) {
-    if ($line -match '^\s*(DETECTION_WEIGHTS|FRESHNESS_WEIGHTS)\s*=\s*(.+?)\s*$') {
-        $wp = Join-Path $BackendDir ($Matches[2] -replace '/', '\')
-        if (-not (Test-Path $wp)) { $missingWeights += "$($Matches[1]) -> $($Matches[2])" }
+$resolved = & $VenvPython -c @"
+from app.core.config import settings
+print(f'DETECTION_WEIGHTS|{settings.DETECTION_WEIGHTS}|{settings.DETECTION_WEIGHTS.exists()}')
+print(f'FRESHNESS_WEIGHTS|{settings.FRESHNESS_WEIGHTS}|{settings.FRESHNESS_WEIGHTS.exists()}')
+"@ 2>$null
+foreach ($line in $resolved) {
+    $parts = "$line".Split("|")
+    if ($parts.Count -eq 3) {
+        $name = $parts[0]
+        $path = $parts[1]
+        $exists = $parts[2].Trim() -eq "True"
+        # yolov8n.pt is the 80-class COCO baseline. It exists, so a
+        # file-existence test passes, yet it detects people and cars rather
+        # than shelf products -- it must be reported like a missing model.
+        if (-not $exists) {
+            $missingWeights += "$name -> $path (file not found)"
+        } elseif ($name -eq "DETECTION_WEIGHTS" -and $path -match 'yolov8[nsmlx]\.pt$') {
+            $missingWeights += "$name -> $path (this is the generic COCO model, not the shelf detector)"
+        }
     }
 }
 if ($missingWeights.Count -gt 0) {
