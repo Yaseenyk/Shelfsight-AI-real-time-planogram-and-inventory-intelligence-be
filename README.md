@@ -135,8 +135,47 @@ be/
 | `POST` | **`/expiry/extract`** | **Upload → EasyOCR → date → validity status (Phase 2)** |
 | `POST` | `/expiry/parse` | Text-only date normalisation (no OCR needed) |
 | `GET` | `/expiry/audits` \| `/summary` | Expiry history, read rate |
-| `GET` | `/insights/status` \| `/context` | Ollama reachability, the exact LLM input |
-| `POST` | `/insights/generate` | Executive briefing (falls back if Ollama is down) |
+| `GET` | `/insights/status` | Ollama reachability **and** whether the model is installed |
+| `GET` | `/insights/context` \| `/prompt` | The exact telemetry and compiled prompt |
+| `POST` | `/insights/generate` | Executive briefing (typed fallback if Ollama is down) |
+
+### AI insights (Phase 3)
+
+```bash
+ollama serve && ollama pull llama3.2      # or set OLLAMA_MODEL
+curl -X POST http://localhost:8000/api/v1/insights/generate \
+     -H 'Content-Type: application/json' \
+     -d '{"audience":"store_manager","window_hours":24}'
+```
+
+Returns a headline, a summary and **up to 3 prioritised actions**, validated
+against a strict Pydantic schema before it can reach the dashboard. It never
+fails: if Ollama is down, the model is missing, or the reply is malformed, you
+get a deterministic rule-based briefing with `degraded: true` and a
+`degraded_reason` naming the cause (`ollama_unreachable`, `model_not_found`,
+`timeout`, `invalid_json`, `schema_validation_failed`).
+
+`GET /insights/prompt` returns the compiled system/user prompt verbatim — quote
+it in the paper instead of re-deriving it from source.
+
+### Dataset augmentation (Phase 3)
+
+```bash
+# Synthesise the missing "ripening" class from fresh produce crops
+python models/augment_data.py ripening --source data/freshness/train/fresh --count 200
+
+# Render + degrade expiry stamps at graded severities (writes ground_truth.csv)
+python models/augment_data.py ocr --count 120 --reference-date 2026-08-14
+python -m evaluation.benchmark ocr        # scores them immediately
+```
+
+Output goes to `data/test_freshness/ripening/` and `data/test_expiry/` — each
+pipeline's own benchmark directory. Every run writes a `manifest.json` recording
+the seed and per-image parameters, with `synthetic: true`.
+
+> Synthetic ripening images are derived from fresh ones by a known HSV transform.
+> Use them to validate the pipeline or augment a real set — **not** as the sole
+> evidence for a class-accuracy claim. See [docs/ARCHITECTURE.md §7a](docs/ARCHITECTURE.md).
 
 ## Evaluation
 

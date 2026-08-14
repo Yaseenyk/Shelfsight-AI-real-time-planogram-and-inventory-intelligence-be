@@ -110,10 +110,16 @@ class Settings(BaseSettings):
 
     # --- Ollama (local LLM insights) --------------------------------------
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_MODEL: str = "llama3.2"
     OLLAMA_TIMEOUT_S: float = 120.0
+    #: Separate, short connect timeout: an absent server should fail in a second,
+    #: not hold the dashboard for the full generation budget.
+    OLLAMA_CONNECT_TIMEOUT_S: float = 3.0
     OLLAMA_TEMPERATURE: float = 0.2
     OLLAMA_NUM_PREDICT: int = 512
+    #: Fall back to any installed generative model when the configured one is
+    #: missing. The substitution is flagged in the response, never silent.
+    OLLAMA_AUTO_SELECT_MODEL: bool = True
 
     @field_validator(
         "CORS_ORIGINS", "FRESHNESS_CLASSES", "OCR_LANGUAGES", "OCR_VARIANTS", mode="before"

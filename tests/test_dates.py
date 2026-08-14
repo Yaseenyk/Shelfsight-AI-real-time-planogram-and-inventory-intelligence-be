@@ -2,7 +2,13 @@ from datetime import date
 
 import pytest
 
-from app.utils.dates import classify_status, normalize_text, parse_expiry_date
+from app.utils.dates import (
+    MAX_PLAUSIBLE_YEAR,
+    MIN_PLAUSIBLE_YEAR,
+    classify_status,
+    normalize_text,
+    parse_expiry_date,
+)
 
 REFERENCE = date(2026, 8, 14)
 
@@ -31,6 +37,30 @@ def test_month_token_survives_glyph_repair():
 def test_unreadable_text_returns_none():
     parsed, pattern, _ = parse_expiry_date("smudged")
     assert parsed is None and pattern is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "BEST BEFORE 19 Aug 202",   # year truncated by a crop or a blur
+        "EXP 12/09/202",
+        "USE BY 0202-08-19",
+        "EXP 19 Aug 12026",         # duplicated digit
+    ],
+)
+def test_implausible_years_are_rejected(raw):
+    """A truncated year must read as unreadable, never as a confident date.
+
+    Regression: OCR losing the last digit of "2027" produced `date(202, 8, 19)`,
+    which is a valid Python date and was reported to the operator as fact.
+    """
+    parsed, _pattern, _ = parse_expiry_date(raw)
+    assert parsed is None or MIN_PLAUSIBLE_YEAR <= parsed.year <= MAX_PLAUSIBLE_YEAR
+
+
+def test_plausible_years_still_parse():
+    assert parse_expiry_date("EXP 12/09/2026")[0] == date(2026, 9, 12)
+    assert parse_expiry_date("EXP 12/09/26")[0] == date(2026, 9, 12)
 
 
 def test_impossible_date_falls_through_to_alternate_order():

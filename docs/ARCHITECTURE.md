@@ -330,17 +330,107 @@ Figures are emitted at 300 dpi PNG **and** vector PDF. Confusion matrices use a
 single-hue sequential ramp with in-cell values, so they stay readable in greyscale print
 and under colour-vision deficiency.
 
-## 7. Local LLM insight layer
+## 7. Local LLM insight layer (Phase 3)
 
-`POST /api/v1/insights/generate` assembles a compact telemetry snapshot
-(`GET /insights/context` returns the identical payload for auditability) and calls
-Ollama `POST /api/generate` with `stream=false`, `format=json` and a schema-constrained
-system prompt. Responses are parsed defensively (fenced/prose-wrapped JSON tolerated).
+```
+ScanSession / time window
+        │  app/services/insight_context.py
+        ▼
+   InsightContext  ──compile_prompt()──►  PromptBundle(system, user)
+        │                                        │
+        │  GET /insights/context                 │  GET /insights/prompt
+        ▼                                        ▼
+   (auditable telemetry)              Ollama POST /api/generate
+                                               │  format=json
+                                               ▼
+                                   LLMInsightPayload (strict Pydantic)
+                                               │
+                                               ▼  ranked, capped at 3
+                                        InsightResponse
+```
 
-When Ollama is unreachable the service returns a deterministic rule-based briefing with
-`degraded: true` rather than an error — the dashboard never shows an empty panel during
-a demo, and the flag keeps generated text distinguishable from templated text in any
-figure or transcript included in the paper.
+### Three layers, deliberately separate
+
+`InsightContext` (what we send) → `LLMInsightPayload` (what we accept back) →
+`InsightResponse` (what we return). The middle layer is the important one: a 3B
+model will happily return prose, wrong types or half the fields, and an
+unvalidated dict reaching the dashboard is how a briefing acquires invented
+numbers. Validation is strict on types and required fields, lenient on extra keys
+— rejecting a good briefing over a stray `"confidence"` field would trade a
+correct answer for a fallback.
+
+### Scope
+
+| Scope | Source | Use |
+| --- | --- | --- |
+| `session` | one `ScanSession` + its audit rows | "explain this scan" |
+| `window` | last N hours, optionally one shelf | "how is the store doing" |
+
+### Prompt compilation
+
+`compile_prompt()` is a pure function of `(context, audience)` — regenerable for
+the paper without a database or a running model, and exposed verbatim at
+`GET /insights/prompt`. Three details that changed the output measurably:
+
+- **A domain glossary.** Without it, llama3.2 read a *phantom* SKU (system 18,
+  detected 0) as an "overstock" and recommended restocking for the wrong reason.
+  With `phantom / undercount / overcount / misplaced` defined in the system
+  prompt, the same telemetry produced "phantom stockout … detected 0, system 18".
+- **Empty metric blocks are dropped.** A model shown a wall of zeros writes about
+  the zeros.
+- **A clean shelf gets different instructions**, explicitly telling the model not
+  to manufacture problems and to return an empty action list.
+
+### Degradation is typed, never silent
+
+`generate()` always returns an `InsightResponse` — it never raises and never
+returns `None`. Each failure carries a distinct `degraded_reason` because each
+needs a different fix:
+
+| Situation | `degraded_reason` | Fix |
+| --- | --- | --- |
+| Ollama not running | `ollama_unreachable` | `ollama serve` |
+| Model not installed | `model_not_found` | `ollama pull <model>` |
+| Generation too slow | `timeout` | smaller model / raise `OLLAMA_TIMEOUT_S` |
+| Reply not JSON | `invalid_json` | — |
+| JSON wrong shape | `schema_validation_failed` | — |
+
+The Phase 0 client collapsed the second case into "unreachable", which sent you
+inspecting a server that was running fine. Model **substitution** (configured
+model absent, another installed one used) is applied so a fresh machine works,
+but flagged via `model_substituted` — silent substitution would poison
+reproducibility.
+
+## 7a. Dataset augmentation (Phase 3)
+
+`models/augment_data.py`, OpenCV + numpy (no albumentations dependency; every
+transform explicit and seed-reproducible).
+
+**Ripening synthesis.** Public freshness datasets are almost all binary, leaving
+the `ripening` class empty. The generator shifts *saturated* pixels through HSV
+toward yellow/orange, scales saturation/value, and stipples ripening spots.
+Restricting to saturated pixels matters: shifting the whole frame would drag the
+background along and the classifier would learn the tray.
+
+**OCR degradation.** Renders known date strings across six formats, then degrades
+them in physical order — print (dot-matrix masking) → geometry (rotation,
+perspective) → optics (blur) → illumination (vignette) → contrast → sensor noise
+→ codec (JPEG). Applying JPEG before noise would produce artefacts no camera
+generates. Emits `ground_truth.csv` so `benchmark ocr` scores it immediately, and
+`manifest.json` recording every parameter per image.
+
+**Severity tiers are calibrated against measured behaviour, not intuition.** The
+first `harsh` profile read **0/6 even with all five preprocessing variants and a
+60 s budget** — a rung past the edge of feasibility measures destruction, not
+resilience. `harsh` was retuned to sit at the edge; the known-unreadable case
+moved to an opt-in `extreme` tier so the ladder still has a floor to cite.
+
+> **Every generated file is `synthetic: true` in its manifest.** Synthetic
+> ripening images are derived from fresh ones by a known colour transform, so a
+> classifier can learn the transform rather than ripeness, and evaluating on the
+> same distribution measures that circularity. Legitimate: pipeline validation,
+> augmenting a real set, ablations. Not legitimate: a headline three-class
+> accuracy number with no real ripening photographs.
 
 ## 8. Reproducibility checklist
 
@@ -358,10 +448,32 @@ figure or transcript included in the paper.
 | **0** | Architecture, schema, contracts, API skeleton, evaluation harness, dashboard shell | done |
 | **1** | OpenCV ingestion, YOLOv8 wrapper + NMS, detection→compliance wiring, live detection benchmark | done |
 | **2** | Freshness CNN service + dataset loader + training; EasyOCR variant pipeline; upload endpoints; live freshness/OCR benchmark runners | done |
-| 3 | **Data**: annotate shelf frames for SKU classes; source a 3-class freshness set incl. `ripening`; photograph real dot-matrix stamps | next |
-| 4 | Fine-tune YOLOv8 + freshness CNN on that data; publishable accuracy numbers | |
-| 5 | Live camera streaming (WebSocket), alert persistence, Ollama prompt tuning | |
-| 6 | Full benchmark run, ablations (IoU / centre-distance / OCR variants), paper figures | |
+| **3** | Local-LLM insight layer (typed context, prompt compiler, strict validation, typed degradation); dataset augmentation engine (ripening synthesis, graded OCR degradation) | done |
+| 4 | **Real data**: annotate shelf frames for SKU classes; photograph real ripening produce and dot-matrix stamps | next |
+| 5 | Fine-tune YOLOv8 + freshness CNN on that data; publishable accuracy numbers | |
+| 6 | Live camera streaming (WebSocket), alert persistence | |
+| 7 | Full benchmark run, ablations (IoU / centre-distance / OCR variants / severity tiers), paper figures | |
+
+### Measured Phase 3 baseline (synthetic stamps, EasyOCR on CPU)
+
+30 generated stamps, 10 per tier, `reference_date=2026-08-14`:
+
+| Severity | CER | WER | Date precision | Date recall |
+| --- | --- | --- | --- | --- |
+| mild | 0.53 | 0.55 | **1.00** | 0.60 |
+| moderate | 0.54 | 0.67 | 0.67 | 0.40 |
+| harsh | 0.80 | 1.00 | 0.40 | 0.20 |
+
+Read these as a *resilience curve on synthetic input*, not as OCR accuracy.
+Two definitional notes that materially affect the numbers:
+
+- **CER/WER score the full OCR transcript**, not the line the parser selected.
+  Scoring the selected line coupled a recogniser metric to the parser — a date
+  regex change moved CER — which makes both uninterpretable. Transcript = OCR
+  quality; precision/recall = parser quality.
+- CER is high partly because EasyOCR emits spurious extra lines on degraded
+  images, and the transcript definition counts them. That is the honest reading:
+  those lines are real errors that mislead downstream.
 
 ### What Phases 1–2 do *not* yet give the paper
 

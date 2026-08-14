@@ -182,9 +182,13 @@ def run_ocr_over_directory(
         samples.append(
             {
                 "id": image_path.name,
-                # `ocr_text` is what metrics.ocr scores CER/WER against; use the
-                # winning line when one parsed, else everything the engine read.
-                "ocr_text": (best.raw_text if best and best.raw_text else result.raw_text),
+                # CER/WER are scored against the FULL transcript, deliberately.
+                # Scoring the winning line instead couples a recogniser metric to
+                # the parser: tightening a date regex then moved CER, which makes
+                # neither number interpretable. Transcript = OCR quality;
+                # precision/recall below = parser quality.
+                "ocr_text": result.raw_text,
+                "selected_text": (best.raw_text if best else None),
                 "truth_text": labels.get("truth_text", ""),
                 "truth_date": labels.get("truth_date"),
                 "predicted_date": best.parsed_date.isoformat()

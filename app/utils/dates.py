@@ -45,6 +45,14 @@ def normalize_text(raw: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip(" :.-")
 
 
+#: Plausibility window for a retail expiry date. Anything outside it is a
+#: misread, not a date: OCR truncating "2027" to "202" yields a technically valid
+#: `date(202, 8, 19)`, and reporting that as a confident read is how a system
+#: ends up telling a store manager the milk expired in the year 202.
+MIN_PLAUSIBLE_YEAR = 1990
+MAX_PLAUSIBLE_YEAR = 2100
+
+
 def _y4(year: int) -> int:
     """Expand a 2-digit year using a retail-friendly pivot (00-79 -> 2000s)."""
     if year >= 100:
@@ -53,8 +61,12 @@ def _y4(year: int) -> int:
 
 
 def _safe_date(year: int, month: int, day: int) -> Optional[date]:
+    """Build a date, rejecting implausible years as well as invalid ones."""
+    expanded = _y4(year)
+    if not MIN_PLAUSIBLE_YEAR <= expanded <= MAX_PLAUSIBLE_YEAR:
+        return None
     try:
-        return date(_y4(year), month, day)
+        return date(expanded, month, day)
     except ValueError:
         return None
 
@@ -68,19 +80,22 @@ _PATTERNS: List[Tuple[str, re.Pattern, object]] = [
     ),
     (
         "compact_ymd",
-        re.compile(r"\b(\d{4})(\d{2})(\d{2})\b"),
+        re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)"),
         lambda m: _safe_date(int(m.group(1)), int(m.group(2)), int(m.group(3))),
     ),
     (
         "dmy_alpha",
-        re.compile(r"\b(\d{1,2})[\s./\-]*([A-Za-z]{3,4})[\s./\-]*(\d{2,4})\b"),
+        re.compile(r"\b(\d{1,2})[\s./\-]*([A-Za-z]{3,4})[\s./\-]*(\d{4}|\d{2})(?!\d)"),
         lambda m: _safe_date(
             int(m.group(3)), MONTH_TOKENS.get(m.group(2).lower().rstrip("."), 0), int(m.group(1))
         ),
     ),
     (
+        # MONTH-day-year puts two digit groups side by side, so a separator is
+        # REQUIRED between them. With `*` the engine happily splits a truncated
+        # run: "AUG 202" became day=2, year=02 -> 2002-08-02, reported as fact.
         "mdy_alpha",
-        re.compile(r"\b([A-Za-z]{3,4})[\s./\-]*(\d{1,2})[\s./\-]*(\d{2,4})\b"),
+        re.compile(r"\b([A-Za-z]{3,4})[\s./\-]*(\d{1,2})[\s./\-]+(\d{4}|\d{2})(?!\d)"),
         lambda m: _safe_date(
             int(m.group(3)), MONTH_TOKENS.get(m.group(1).lower().rstrip("."), 0), int(m.group(2))
         ),
@@ -95,12 +110,14 @@ _PATTERNS: List[Tuple[str, re.Pattern, object]] = [
         # Whitespace counts as a separator: OCR routinely loses faint slashes and
         # dots, so "12 09 2026" is the same stamp as "12/09/2026". Requiring a
         # punctuation separator here silently drops a large share of real reads.
-        re.compile(r"\b(\d{1,2})[./\-\s](\d{1,2})[./\-\s](\d{2,4})\b"),
+        re.compile(r"\b(\d{1,2})[./\-\s](\d{1,2})[./\-\s](\d{4}|\d{2})(?!\d)"),
         None,  # handled specially below
     ),
     (
+        # Month/year only. The lookahead stops it consuming the first two thirds
+        # of a full date: "12/09/202" must not read as December 2009.
         "numeric_my",  # "11/26"
-        re.compile(r"\b(\d{1,2})[./\-](\d{2,4})\b"),
+        re.compile(r"\b(\d{1,2})[./\-](\d{4}|\d{2})(?![\d./\-])"),
         None,
     ),
 ]
