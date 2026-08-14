@@ -1,0 +1,20 @@
+{
+  "description": "Detector class name -> catalogue SKU. Lets a stock COCO-pretrained YOLOv8n drive the full pipeline before the fine-tuned shelf detector exists (Phase 1). Once the detector is trained on real SKU classes, Product.detection_class_name takes over and this file can shrink to the leftovers.",
+  "detector": "yolov8n (COCO-80)",
+  "notes": "Keys are matched case-insensitively. A class with no entry is still detected — it simply reports as an EXTRA (off-planogram) object rather than being silently dropped.",
+  "mapping": {
+    "bottle": "SKU-WATER-500",
+    "cup": "SKU-COLA-330",
+    "wine glass": "SKU-COLA-330",
+    "banana": "SKU-BANANA-1KG",
+    "apple": "SKU-APPLE-1KG",
+    "orange": "SKU-ORANGE-1KG",
+    "sandwich": "SKU-CHIPS-150",
+    "book": "SKU-CHIPS-150",
+    "vase": "SKU-MILK-1L",
+    "cola_can": "SKU-COLA-330",
+    "water_bottle": "SKU-WATER-500",
+    "chips_bag": "SKU-CHIPS-150",
+    "milk_carton": "SKU-MILK-1L"
+  }
+}

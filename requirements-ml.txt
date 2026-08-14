@@ -1,0 +1,23 @@
+# Vision / ML stack. Installed separately so the API and the non-vision suites
+# stay installable on a machine without a GPU or a multi-GB download.
+#
+# CPU-only torch (Windows/Linux):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# CUDA 12.1:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+-r requirements.txt
+
+torch>=2.2
+torchvision>=0.17
+torchmetrics>=1.4
+ultralytics>=8.2
+opencv-python-headless>=4.10
+easyocr>=1.7
+pillow>=10.3
+
+# COCO eval backend for torchmetrics' MeanAveragePrecision. Without it the
+# benchmark silently degrades to a pure-Python AP@0.5 and cannot report
+# mAP@0.5:0.95 — swap for `faster-coco-eval` if this fails to build.
+pycocotools>=2.0.7
+
