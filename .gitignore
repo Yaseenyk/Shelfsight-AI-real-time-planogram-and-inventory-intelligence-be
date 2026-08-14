@@ -47,7 +47,8 @@ evaluation/reports/*
 # Published figures are build artefacts of one benchmark run — regenerate with
 # `make evaluate` rather than citing whatever was committed months ago.
 docs/publication_metrics/*
-!docs/publication_metrics/README.md
+# ...but prose in this directory is source material for the paper, not output.
+!docs/publication_metrics/*.md
 
 # Curated/raw datasets
 data/raw/
