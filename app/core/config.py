@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # --- Database --------------------------------------------------------
     DATABASE_URL: str = f"sqlite:///{(BASE_DIR / 'shelfsight.db').as_posix()}"
     SQL_ECHO: bool = False
+    #: Seed the catalogue + planograms on first boot so a fresh container is
+    #: usable immediately. Never overwrites an existing database.
+    SEED_ON_STARTUP: bool = True
 
     # --- Detection (YOLOv8) ----------------------------------------------
     DETECTION_WEIGHTS: Path = BASE_DIR / "models" / "weights" / "yolov8n.pt"

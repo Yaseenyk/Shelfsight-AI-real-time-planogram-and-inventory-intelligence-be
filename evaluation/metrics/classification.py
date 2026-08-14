@@ -7,7 +7,7 @@ so the harness never dies mid-experiment; the report records which backend ran.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from evaluation.metrics.plotting import plot_confusion_matrix
 
@@ -51,6 +51,47 @@ def evaluate(
         result["figures"] = [str(figure), str(normalized)]
 
     return result
+
+
+def pr_curve_from_probabilities(
+    y_true: Sequence[str],
+    probabilities: Sequence[Dict[str, float]],
+    labels: Sequence[str],
+) -> Tuple[Dict[str, List[Tuple[float, float]]], Dict[str, float]]:
+    """One-vs-rest precision-recall curves from per-class softmax scores.
+
+    Returns `(curves, average_precision)`. Requires the classifier's
+    probabilities — the live freshness runner records them, so this works on any
+    run produced by `benchmark freshness`.
+    """
+    curves: Dict[str, List[Tuple[float, float]]] = {}
+    average_precision: Dict[str, float] = {}
+
+    for label in labels:
+        scored = [
+            (float(probs.get(label, 0.0)), truth == label)
+            for truth, probs in zip(y_true, probabilities)
+        ]
+        positives = sum(1 for _score, is_positive in scored if is_positive)
+        if not positives:
+            continue  # a class with no examples has no curve, not a flat line
+
+        tp = fp = 0
+        points: List[Tuple[float, float]] = []
+        area = 0.0
+        previous_recall = 0.0
+        for _score, is_positive in sorted(scored, key=lambda row: row[0], reverse=True):
+            tp, fp = (tp + 1, fp) if is_positive else (tp, fp + 1)
+            recall, precision = tp / positives, tp / (tp + fp)
+            points.append((recall, precision))
+            # Step-wise AP: sum of precision × recall increment.
+            area += precision * (recall - previous_recall)
+            previous_recall = recall
+
+        curves[label] = points
+        average_precision[label] = round(area, 4)
+
+    return curves, average_precision
 
 
 def _sklearn_metrics(

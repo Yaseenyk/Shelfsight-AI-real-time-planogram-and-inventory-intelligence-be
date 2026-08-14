@@ -165,6 +165,15 @@ class ComplianceAuditRead(ORMModel):
 class ComplianceCheckResponse(ComplianceAuditRead):
     slot_results: List[SlotResult] = Field(default_factory=list)
 
+    # A `persist=false` check is a preview: the audit is never written, so it has
+    # no database id. Inheriting the strict `int` from ComplianceAuditRead made
+    # that documented option fail with a 422 — the row it validated against did
+    # not exist. The list endpoints keep the strict type.
+    id: Optional[int] = Field(
+        default=None, description="Null when the check was run with persist=false"
+    )
+    created_at: Optional[datetime] = None
+
 
 class DetectionSummary(BaseModel):
     """Instrumentation for one detector pass, surfaced with every verification."""

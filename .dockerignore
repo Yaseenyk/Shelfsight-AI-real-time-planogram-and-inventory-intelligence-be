@@ -1,0 +1,38 @@
+# Keep the build context small and free of host-specific state.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.git/
+.gitignore
+
+# Host database and runtime artefacts — the container uses its own volume.
+*.db
+*.db-wal
+*.db-shm
+data/uploads/
+data/raw/
+data/samples/
+data/crops/
+data/test_images/
+data/test_freshness/
+data/test_expiry/
+data/freshness/
+
+# Weights are mounted, never baked in: a 6 MB detector is fine but a fine-tuned
+# ResNet50 would bloat every image layer.
+models/weights/*
+!models/weights/.gitkeep
+runs/
+
+evaluation/reports/*
+!evaluation/reports/.gitkeep
+
+.env
+.env.local
+.vscode/
+.idea/

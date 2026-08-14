@@ -1,0 +1,85 @@
+# ShelfSight AI — full stack.
+#
+# Expects the two repositories side by side, which is how they clone:
+#
+#   Projects/
+#   ├── be/   <- you are here (docker-compose.yml, Makefile, setup scripts)
+#   └── fe/   <- frontend; override with FRONTEND_CONTEXT if it lives elsewhere
+#
+#   make build && make run      →  dashboard on :3000, API on :8000
+#
+# Everything mutable (weights, database, uploads, OCR model cache) lives in the
+# `shelfsight-runtime` volume, so `docker compose down` never loses a trained
+# model or a scan history. Use `make reset` to deliberately wipe it.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shelfsight/backend:latest
+    container_name: shelfsight-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: sqlite:////app/runtime/shelfsight.db
+      DETECTION_WEIGHTS: /app/runtime/weights/yolov8n.pt
+      FRESHNESS_WEIGHTS: /app/runtime/weights/freshness_mobilenetv2.pt
+      UPLOAD_DIR: /app/runtime/uploads
+      REPORTS_DIR: /app/runtime/reports
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SEED_ON_STARTUP: "true"
+      DETECTION_DEVICE: cpu
+    volumes:
+      - shelfsight-runtime:/app/runtime
+      # Planograms and ground truth are editable inputs, not runtime state —
+      # bind-mounted so the client can drop in a new layout without rebuilding.
+      - ./data/planograms:/app/data/planograms:ro
+      - ./data/ground_truth:/app/data/ground_truth:ro
+      - ./data/class_map.json:/app/data/class_map.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      # Generous: the first boot loads torch and warms the detector.
+      start_period: 120s
+      retries: 3
+
+  frontend:
+    build:
+      context: ${FRONTEND_CONTEXT:-../fe}
+      dockerfile: Dockerfile
+      args:
+        # Baked into the browser bundle at build time — it must be the URL the
+        # *browser* can reach, not the compose service name.
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    image: shelfsight/frontend:latest
+    container_name: shelfsight-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Opt-in: `make run-llm` (or `docker compose --profile llm up -d`).
+  # Left out of the default stack because the image is ~1 GB and the system
+  # degrades gracefully without it.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: shelfsight-ollama
+    restart: unless-stopped
+    profiles: ["llm"]
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  shelfsight-runtime:
+    name: shelfsight-runtime
+  ollama-models:
+    name: shelfsight-ollama-models

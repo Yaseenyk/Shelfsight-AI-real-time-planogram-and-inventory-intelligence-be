@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -83,7 +84,12 @@ def check_compliance(
 
     session = create_session(db, shelf_id=payload.shelf_id)
     engine = ComplianceEngine()
-    result = engine.evaluate(document, payload.detections, shelf_id=payload.shelf_id)
+    # Resolve detector class names to catalogue SKUs here too, not just on the
+    # image path. Without it a caller posting raw detector output (`bottle`,
+    # `banana`) can never satisfy a slot, because the engine matches on SKU —
+    # every slot would read MISSING on a correctly stocked shelf.
+    detections = resolve_detections(payload.detections, db=db)
+    result = engine.evaluate(document, detections, shelf_id=payload.shelf_id)
     audit = _persist(db, layout, session.id, payload.shelf_id, result, payload.persist)
     complete_session(db, session, total_latency_ms=result.latency_ms)
     return _to_response(audit, result)
@@ -259,6 +265,10 @@ def _persist(
     if persist:
         db.add(audit)
         db.flush()
+    else:
+        # Transient preview: `created_at` is a server default that only fires on
+        # INSERT, so stamp it here rather than returning a null timestamp.
+        audit.created_at = datetime.now(timezone.utc)
     return audit
 
 

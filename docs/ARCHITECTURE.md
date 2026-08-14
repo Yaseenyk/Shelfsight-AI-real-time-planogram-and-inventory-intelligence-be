@@ -432,6 +432,57 @@ moved to an opt-in `extreme` tier so the ladder still has a floor to cite.
 > augmenting a real set, ablations. Not legitimate: a headline three-class
 > accuracy number with no real ripening photographs.
 
+## 7b. Packaging and first boot (Phase 4)
+
+```
+        docker compose
+   ┌──────────────┬──────────────┬─────────────────┐
+   │  frontend    │   backend    │  ollama (opt.)  │
+   │  node:20     │  python:3.10 │  profile: llm   │
+   │  :3000       │  :8000       │  :11434         │
+   └──────────────┴──────┬───────┴─────────────────┘
+                         │
+                 shelfsight-runtime volume
+             db · weights · uploads · OCR cache
+```
+
+**Python 3.10 in the container**, matching the client's interpreter and the
+`requires-python` floor. The codebase has deliberately avoided 3.11-only syntax
+since Phase 0, and the whole suite runs on 3.10 here.
+
+**System libraries are the failure mode worth naming.** `import cv2` on a slim
+Debian image dies with `libGL.so.1: cannot open shared object file`, which reads
+like a Python problem and is not — hence the explicit `libgl1-mesa-glx`,
+`libglib2.0-0`, `libsm6`, `libxext6`, `libxrender1`, `libgomp1`.
+
+**CPU-only torch** is installed from the PyTorch CPU index; the default wheel
+drags in ~2.5 GB of unused CUDA libraries.
+
+**Everything mutable is one volume.** Database, weights, uploads and the EasyOCR
+model cache all live under `/app/runtime`, so a restart never re-downloads
+~100 MB of OCR models or loses a trained checkpoint. Planograms and ground truth
+are bind-mounted read-only instead: they are editable *inputs*, and the client
+should be able to drop in a new layout without rebuilding an image.
+
+**Frontend caveat**: `NEXT_PUBLIC_*` values are inlined at build time, not read
+from the container's environment. The compose build arg must therefore be the
+URL the *browser* can reach, never the compose service name.
+
+### First-boot seeding — `app/core/seed.py`
+
+A container that starts with an empty catalogue looks broken rather than empty,
+so the lifespan seeds one when the database is fresh. Two rules make it safe to
+run on every boot:
+
+- **Only when empty.** A populated database is never touched.
+- **Never overwrite.** Operator edits — a corrected stock count, a deleted
+  product — survive restarts. A restart that resurrects a deleted SKU would be
+  worse than not seeding at all.
+
+The seeded SKUs map onto COCO class names, so the pretrained detector resolves
+them through `data/class_map.json` and the very first scan produces real
+verdicts against the seeded 3-shelf planogram.
+
 ## 8. Reproducibility checklist
 
 - [ ] `.env` for the run is committed alongside the reported numbers.
@@ -449,10 +500,25 @@ moved to an opt-in `extreme` tier so the ladder still has a floor to cite.
 | **1** | OpenCV ingestion, YOLOv8 wrapper + NMS, detection→compliance wiring, live detection benchmark | done |
 | **2** | Freshness CNN service + dataset loader + training; EasyOCR variant pipeline; upload endpoints; live freshness/OCR benchmark runners | done |
 | **3** | Local-LLM insight layer (typed context, prompt compiler, strict validation, typed degradation); dataset augmentation engine (ripening synthesis, graded OCR degradation) | done |
-| 4 | **Real data**: annotate shelf frames for SKU classes; photograph real ripening produce and dot-matrix stamps | next |
-| 5 | Fine-tune YOLOv8 + freshness CNN on that data; publishable accuracy numbers | |
-| 6 | Live camera streaming (WebSocket), alert persistence | |
-| 7 | Full benchmark run, ablations (IoU / centre-distance / OCR variants / severity tiers), paper figures | |
+| **4** | Dataset curation engine; ONNX/TorchScript export with verification; PR curves; Docker packaging with persistent volumes; first-boot seeding; one-command handover scripts | done |
+| 5 | **Acquire real data**: annotate shelf frames for SKU classes; photograph real ripening produce and dot-matrix stamps | next |
+| 6 | Fine-tune YOLOv8 + freshness CNN on that data; publishable accuracy numbers | |
+| 7 | Live camera streaming (WebSocket), alert persistence | |
+| 8 | Full benchmark run, ablations (IoU / centre-distance / OCR variants / severity tiers), final paper figures | |
+
+### Phase 4 engineering result
+
+ONNX export of the freshness CNN, verified against the PyTorch reference
+(max output Δ = 2.2e-06) and measured on this machine:
+
+| Runtime | Latency per crop (CPU) |
+| --- | --- |
+| PyTorch eager | 24.3 ms |
+| ONNX Runtime | **3.4 ms** (7.1×) |
+
+This one *is* citable — it is a measurement of the packaged system, not of a
+model trained on synthetic data. Quote it as a deployment-optimisation result,
+with the hardware stated.
 
 ### Measured Phase 3 baseline (synthetic stamps, EasyOCR on CPU)
 

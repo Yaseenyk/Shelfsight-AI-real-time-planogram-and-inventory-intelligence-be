@@ -2,17 +2,19 @@
 name = "shelfsight-backend"
 version = "0.1.0"
 description = "ShelfSight AI — real-time planogram and inventory intelligence (FastAPI backend)"
-requires-python = ">=3.11"
+# 3.10 is the supported floor: the Docker image, the client's local interpreter
+# and CI all run it, and the codebase deliberately avoids 3.11-only syntax.
+requires-python = ">=3.10"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 exclude = ["runs", "evaluation/reports", ".venv"]
 
 [tool.ruff.lint]
-# `UP` is deliberately excluded: it rewrites annotations to 3.11-only syntax
-# (PEP 604/585, StrEnum), and the codebase stays readable on 3.10 interpreters
-# that students and lab machines still run.
+# `UP` is deliberately excluded: it rewrites annotations to newer-only syntax
+# (PEP 604/585, StrEnum), and the codebase must stay importable on the 3.10
+# floor that the container and the client's machine both run.
 select = ["E", "F", "I", "B", "C4", "SIM"]
 ignore = [
     "B008",  # FastAPI's Depends()/File() defaults are the documented idiom

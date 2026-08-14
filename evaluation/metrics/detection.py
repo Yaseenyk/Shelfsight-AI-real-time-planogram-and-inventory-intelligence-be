@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 from app.utils.geometry import iou_xyxy
 
@@ -134,6 +134,60 @@ def _fallback_map(
         "false_positives": fp,
         "false_negatives": fn,
     }
+
+
+def pr_curve(
+    predictions: Sequence[Dict[str, Any]],
+    targets: Sequence[Dict[str, Any]],
+    iou_threshold: float = 0.5,
+) -> Dict[str, List[Tuple[float, float]]]:
+    """Score-ranked precision-recall points, per class.
+
+    Built from the same greedy IoU matching the fallback AP uses, so the curve
+    and the reported AP@0.5 can never disagree — a figure that contradicts its
+    own table is worse than no figure.
+    """
+    per_class_records: Dict[int, List[tuple]] = {}
+    per_class_gt: Dict[int, int] = {}
+
+    for pred, truth in zip(predictions, targets):
+        boxes = list(pred.get("boxes", []))
+        labels = list(pred.get("labels", []))
+        scores = list(pred.get("scores", [1.0] * len(boxes)))
+        gt_boxes = list(truth.get("boxes", []))
+        gt_labels = list(truth.get("labels", []))
+
+        for label in set(gt_labels):
+            per_class_gt[label] = per_class_gt.get(label, 0) + gt_labels.count(label)
+
+        matched: set[int] = set()
+        for score, box, label in sorted(
+            zip(scores, boxes, labels), key=lambda row: row[0], reverse=True
+        ):
+            best_iou, best_index = 0.0, -1
+            for gi, (gt_box, gt_label) in enumerate(zip(gt_boxes, gt_labels)):
+                if gi in matched or gt_label != label:
+                    continue
+                value = iou_xyxy(tuple(box), tuple(gt_box))
+                if value > best_iou:
+                    best_iou, best_index = value, gi
+            hit = best_iou >= iou_threshold and best_index >= 0
+            if hit:
+                matched.add(best_index)
+            per_class_records.setdefault(label, []).append((score, hit))
+
+    curves: Dict[str, List[Tuple[float, float]]] = {}
+    for label, records in per_class_records.items():
+        total = per_class_gt.get(label, 0)
+        if not total:
+            continue
+        tp = fp = 0
+        points: List[Tuple[float, float]] = []
+        for _score, hit in sorted(records, key=lambda r: r[0], reverse=True):
+            tp, fp = (tp + 1, fp) if hit else (tp, fp + 1)
+            points.append((tp / total, tp / (tp + fp)))
+        curves[f"class {label}"] = points
+    return curves
 
 
 def _average_precision(records: Sequence[tuple], total_gt: int) -> float:

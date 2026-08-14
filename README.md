@@ -8,7 +8,41 @@ Frontend repo: [Shelfsight-AI-real-time-planogram-and-inventory-intelligence](ht
 
 ---
 
-## Quickstart
+## Quickstart — Docker (recommended)
+
+Clone both repositories side by side, then run one command:
+
+```
+Projects/
+├── be/   <- this repo
+└── fe/   <- frontend
+```
+
+```bash
+cd be
+make build && make run          # Linux/macOS
+setup.bat                       # Windows (double-click also works)
+```
+
+- Dashboard: <http://localhost:3000>
+- API docs: <http://localhost:8000/docs>
+
+The database, weights, uploads and OCR model cache live in the
+`shelfsight-runtime` volume, so `make stop` never loses a trained model.
+`make run-llm` additionally starts Ollama for the insight briefings.
+
+| Command | Does |
+| --- | --- |
+| `make build` / `make run` / `make stop` | Build, start, stop the stack |
+| `make logs` / `make health` | Follow logs, check the API |
+| `make evaluate` | Run all benchmarks, publish figures to `docs/publication_metrics/` |
+| `make export` | Export models to ONNX and measure the CPU speed-up |
+| `make reset` | **Destructive**: wipe database, uploads and weights (asks first) |
+
+`setup.bat` / `setup.sh` wrap the same commands with prerequisite checks, for a
+viva demo where a Docker stack trace is not a helpful error message.
+
+## Quickstart — local (no Docker)
 
 ```bash
 python -m venv .venv
@@ -19,9 +53,12 @@ pip install -r requirements-ml.txt   # adds torch, ultralytics, easyocr — need
 
 copy .env.example .env               # cp on Linux/macOS
 
-python -m app.db.init_db --seed      # create SQLite schema + demo catalogue & planogram
+python -m app.db.init_db --seed      # create SQLite schema + catalogue & planogram
 uvicorn app.main:app --reload --port 8000
 ```
+
+Python **3.10+**. The API seeds itself on first boot (`SEED_ON_STARTUP`), so
+`--seed` is only needed when you want the catalogue without starting the server.
 
 - Swagger: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
@@ -177,13 +214,52 @@ the seed and per-image parameters, with `synthetic: true`.
 > Use them to validate the pipeline or augment a real set — **not** as the sole
 > evidence for a class-accuracy claim. See [docs/ARCHITECTURE.md §7a](docs/ARCHITECTURE.md).
 
+### Real datasets (Phase 4)
+
+```bash
+python tools/dataset_curator.py list                    # pinned public datasets
+python tools/dataset_curator.py fetch freshness --dry-run
+python tools/dataset_curator.py fetch freshness --api-key $ROBOFLOW_API_KEY
+python tools/dataset_curator.py merge --out data/freshness --val-split 0.2
+```
+
+`merge` folds binary fresh/spoiled sets and a ripening set into the strict
+3-class layout, deduplicating by content hash across sources (public fruit
+datasets overlap, and the same photo in train and val silently inflates
+accuracy). It writes `curation_manifest.json` with sources, licences, per-class
+counts and the split.
+
+> **The `roboflow` package has no dataset search API.** Downloading needs an
+> exact `workspace/project/version` plus a key, so the registry pins known
+> identifiers and `list` prints their URLs to verify. `merge` works on any
+> folders you downloaded by hand and needs no key at all.
+
+### Model export (Phase 4)
+
+```bash
+python models/export_pipeline.py export --format onnx --benchmark
+python models/export_pipeline.py export --format torchscript --target freshness
+```
+
+Every export is reloaded and re-run, and ONNX output is compared against the
+PyTorch reference — an export that silently produces wrong numbers is worse than
+no export. Measured on this machine (MobileNetV2, 128px, CPU):
+
+| Runtime | Latency | |
+| --- | --- | --- |
+| PyTorch eager | 24.3 ms | |
+| ONNX Runtime | **3.4 ms** | 7.1× faster, max output Δ = 2.2e-06 |
+
 ## Evaluation
 
 ```bash
 python -m evaluation.benchmark all
+make evaluate            # same, plus publishing figures for the paper
 ```
 
-See [`evaluation/README.md`](evaluation/README.md) for suites, input formats and outputs.
+See [`evaluation/README.md`](evaluation/README.md) for suites, input formats and
+outputs, and [`docs/publication_metrics/`](docs/publication_metrics/) for the
+figures the paper draws from.
 
 ## Tests & lint
 

@@ -44,6 +44,19 @@ data/freshness/
 evaluation/reports/*
 !evaluation/reports/.gitkeep
 
+# Published figures are build artefacts of one benchmark run — regenerate with
+# `make evaluate` rather than citing whatever was committed months ago.
+docs/publication_metrics/*
+!docs/publication_metrics/README.md
+
+# Curated/raw datasets
+data/raw/
+data/detection/
+
+# Exported model artefacts
+*.onnx
+*.torchscript.pt
+
 # Editors / OS
 .vscode/
 .idea/

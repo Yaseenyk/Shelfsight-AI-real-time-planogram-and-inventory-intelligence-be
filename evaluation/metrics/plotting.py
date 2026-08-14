@@ -11,7 +11,7 @@ Figure conventions (IEEE-friendly, print-safe):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Tuple
 
 # Sequential single hue, light -> dark. Perceptually ordered in greyscale.
 SEQUENTIAL_CMAP = "Blues"
@@ -96,6 +96,58 @@ def plot_confusion_matrix(
     bar.outline.set_edgecolor(MUTED)
     bar.set_label("Proportion" if normalize else "Samples")
     ax.grid(False)
+    return save_figure(fig, out_path)
+
+
+#: Categorical hues for multi-series curves, in fixed assignment order. Chosen to
+#: stay separable in greyscale (distinct lightness) and under common CVD, since
+#: these figures are printed. Never cycled — a 5th class folds into "other".
+SERIES_COLORS = ("#2c6fb5", "#c2571a", "#3f7d4e", "#7a4fa3")
+SERIES_DASHES = ((), (5, 2), (1, 1.5), (6, 2, 1, 2))
+
+
+def plot_pr_curve(
+    series: Dict[str, Sequence[Tuple[float, float]]],
+    out_path: Path,
+    title: str = "Precision-recall",
+    average_precision: Optional[Dict[str, float]] = None,
+) -> Path:
+    """Precision-recall curves, one line per class.
+
+    `series` maps a label to an ordered list of `(recall, precision)` points.
+    Identity is carried by colour **and** dash pattern plus a legend, so the
+    figure survives greyscale printing — a colour-only legend is unreadable in a
+    printed IEEE column.
+    """
+    plt = _pyplot()
+
+    fig, ax = plt.subplots(figsize=(4.6, 3.6))
+    for index, (label, points) in enumerate(sorted(series.items())):
+        if not points:
+            continue
+        recalls = [float(r) for r, _p in points]
+        precisions = [float(p) for _r, p in points]
+        legend_label = label
+        if average_precision and label in average_precision:
+            legend_label = f"{label} (AP={average_precision[label]:.3f})"
+        ax.plot(
+            recalls,
+            precisions,
+            linewidth=2.0,
+            color=SERIES_COLORS[index % len(SERIES_COLORS)],
+            dashes=SERIES_DASHES[index % len(SERIES_DASHES)],
+            label=legend_label,
+        )
+
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title(title)
+    ax.set_xlim(0.0, 1.02)
+    ax.set_ylim(0.0, 1.02)
+    ax.grid(True, color="#e5e7eb", linewidth=0.8)
+    ax.set_axisbelow(True)
+    if series:
+        ax.legend(loc="lower left", fontsize=8, frameon=False)
     return save_figure(fig, out_path)
 
 

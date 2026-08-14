@@ -16,7 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.seed import seed_if_empty
 from app.db.init_db import init_db
+from app.db.session import SessionLocal
 from app.schemas.common import ErrorResponse, HealthResponse
 from app.services.detection import get_detector
 from app.services.llm_client import get_ollama_client
@@ -29,6 +31,13 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI):
     settings.ensure_directories()
     init_db()
+
+    # Seed on first boot so a fresh container is immediately usable. Idempotent:
+    # a populated database is left exactly as the operator left it.
+    if settings.SEED_ON_STARTUP:
+        with SessionLocal() as db:
+            seed_if_empty(db)
+
     # Load + warm the detector so the first scan request is not penalised by it.
     detector = get_detector()
     if detector.load():

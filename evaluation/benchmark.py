@@ -32,7 +32,7 @@ from app.utils.vision import list_images
 from evaluation.detection_runner import run_detector_over_directory
 from evaluation.freshness_runner import run_classifier_over_directory
 from evaluation.metrics import classification, compliance, detection, ocr
-from evaluation.metrics.plotting import plot_metric_bars
+from evaluation.metrics.plotting import plot_metric_bars, plot_pr_curve
 from evaluation.ocr_runner import run_ocr_over_directory
 
 logger = get_logger(__name__)
@@ -211,6 +211,16 @@ def run_detection(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
         result["figure"] = str(
             plot_metric_bars(bars, run_dir / "detection_metrics.png", "Detection performance")
         )
+
+    curves = detection.pr_curve(predictions, targets, iou_threshold=args.iou)
+    if curves:
+        result["pr_curve_figure"] = str(
+            plot_pr_curve(
+                curves,
+                run_dir / "detection_pr_curve.png",
+                title=f"Detection precision-recall (IoU {args.iou})",
+            )
+        )
     return result
 
 
@@ -280,6 +290,23 @@ def run_freshness(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
             "Freshness classification",
         )
     )
+
+    # PR curves need per-class scores, which only the live runner records.
+    probabilities = [s.get("probabilities") for s in samples if s.get("probabilities")]
+    if len(probabilities) == len(samples) and samples:
+        curves, average_precision = classification.pr_curve_from_probabilities(
+            y_true, probabilities, list(settings.FRESHNESS_CLASSES)
+        )
+        if curves:
+            result["average_precision"] = average_precision
+            result["pr_curve_figure"] = str(
+                plot_pr_curve(
+                    curves,
+                    run_dir / "freshness_pr_curve.png",
+                    title="Freshness precision-recall (one-vs-rest)",
+                    average_precision=average_precision,
+                )
+            )
     return result
 
 
