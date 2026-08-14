@@ -63,3 +63,9 @@ data/detection/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Cluster-repartitioned corpora: regenerate with `make cluster-split`
+data/freshness_clean/
+# SKU-110K subset lists hold absolute paths to a local dataset cache, so they
+# are machine-specific; the manifest recording how they were built is tracked.
+models/datasets/sku110k_subset/*.txt

@@ -1,20 +1,21 @@
 {
-  "description": "Detector class name -> catalogue SKU. Lets a stock COCO-pretrained YOLOv8n drive the full pipeline before the fine-tuned shelf detector exists (Phase 1). Once the detector is trained on real SKU classes, Product.detection_class_name takes over and this file can shrink to the leftovers.",
+  "description": "Detector class name -> catalogue SKU. Lets a stock COCO-pretrained YOLOv8n drive the full pipeline before an India-specific SKU detector is trained. Once the detector is fine-tuned on real Indian retail classes, Product.detection_class_name takes over and this file shrinks to the leftovers.",
   "detector": "yolov8n (COCO-80)",
-  "notes": "Keys are matched case-insensitively. A class with no entry is still detected — it simply reports as an EXTRA (off-planogram) object rather than being silently dropped.",
+  "notes": "Keys are matched case-insensitively. A class with no entry is still detected — it reports as an EXTRA (off-planogram) object rather than being silently dropped. COCO has no Indian-brand classes, so generic shapes stand in: a Bisleri bottle is a 'bottle', an Amul pouch is closest to 'vase'.",
   "mapping": {
-    "bottle": "SKU-WATER-500",
-    "cup": "SKU-COLA-330",
-    "wine glass": "SKU-COLA-330",
+    "bottle": "SKU-WATER-1L",
+    "cup": "SKU-COLA-750",
+    "wine glass": "SKU-COLA-750",
     "banana": "SKU-BANANA-1KG",
     "apple": "SKU-APPLE-1KG",
     "orange": "SKU-ORANGE-1KG",
-    "sandwich": "SKU-CHIPS-150",
-    "book": "SKU-CHIPS-150",
-    "vase": "SKU-MILK-1L",
-    "cola_can": "SKU-COLA-330",
-    "water_bottle": "SKU-WATER-500",
-    "chips_bag": "SKU-CHIPS-150",
-    "milk_carton": "SKU-MILK-1L"
+    "sandwich": "SKU-CHIPS-52",
+    "book": "SKU-CHIPS-52",
+    "vase": "SKU-MILK-500",
+    "bowl": "SKU-MILK-500",
+    "water_bottle": "SKU-WATER-1L",
+    "cola_bottle": "SKU-COLA-750",
+    "chips_packet": "SKU-CHIPS-52",
+    "milk_pouch": "SKU-MILK-500"
   }
 }

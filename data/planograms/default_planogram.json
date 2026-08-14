@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0.0",
   "planogram_id": "PLN-AISLE3-BAY2",
-  "name": "Aisle 3 / Bay 2 — Beverages, Snacks, Chilled",
+  "name": "Aisle 3 / Bay 2 \u2014 Beverages, Snacks, Chilled, Produce",
   "version": "1.0.0",
-  "store_id": "STORE-001",
+  "store_id": "STORE-IN-001",
   "aisle": "3",
   "bay": "2",
   "units": "normalized",
@@ -17,7 +17,10 @@
     {
       "shelf_id": "S1",
       "level": 1,
-      "y_range": [0.05, 0.32],
+      "y_range": [
+        0.05,
+        0.32
+      ],
       "rows": [
         {
           "row_id": "S1-R1",
@@ -26,25 +29,40 @@
             {
               "slot_id": "S1-R1-P1",
               "position": 1,
-              "sku": "SKU-COLA-330",
+              "sku": "SKU-COLA-750",
               "expected_facings": 4,
-              "bbox": { "x1": 0.06, "y1": 0.08, "x2": 0.26, "y2": 0.29 },
+              "bbox": {
+                "x1": 0.06,
+                "y1": 0.08,
+                "x2": 0.26,
+                "y2": 0.29
+              },
               "orientation": "front"
             },
             {
               "slot_id": "S1-R1-P2",
               "position": 2,
-              "sku": "SKU-WATER-500",
+              "sku": "SKU-WATER-1L",
               "expected_facings": 6,
-              "bbox": { "x1": 0.28, "y1": 0.08, "x2": 0.55, "y2": 0.29 },
+              "bbox": {
+                "x1": 0.28,
+                "y1": 0.08,
+                "x2": 0.55,
+                "y2": 0.29
+              },
               "orientation": "front"
             },
             {
               "slot_id": "S1-R1-P3",
               "position": 3,
-              "sku": "SKU-CHIPS-150",
+              "sku": "SKU-CHIPS-52",
               "expected_facings": 3,
-              "bbox": { "x1": 0.57, "y1": 0.08, "x2": 0.78, "y2": 0.29 },
+              "bbox": {
+                "x1": 0.57,
+                "y1": 0.08,
+                "x2": 0.78,
+                "y2": 0.29
+              },
               "orientation": "front",
               "is_mandatory": false
             }
@@ -55,7 +73,10 @@
     {
       "shelf_id": "S2",
       "level": 2,
-      "y_range": [0.34, 0.63],
+      "y_range": [
+        0.34,
+        0.63
+      ],
       "rows": [
         {
           "row_id": "S2-R1",
@@ -64,25 +85,40 @@
             {
               "slot_id": "S2-R1-P1",
               "position": 1,
-              "sku": "SKU-MILK-1L",
+              "sku": "SKU-MILK-500",
               "expected_facings": 5,
-              "bbox": { "x1": 0.06, "y1": 0.37, "x2": 0.32, "y2": 0.6 },
+              "bbox": {
+                "x1": 0.06,
+                "y1": 0.37,
+                "x2": 0.32,
+                "y2": 0.6
+              },
               "orientation": "front"
             },
             {
               "slot_id": "S2-R1-P2",
               "position": 2,
-              "sku": "SKU-CHIPS-150",
+              "sku": "SKU-CHIPS-52",
               "expected_facings": 4,
-              "bbox": { "x1": 0.34, "y1": 0.37, "x2": 0.6, "y2": 0.6 },
+              "bbox": {
+                "x1": 0.34,
+                "y1": 0.37,
+                "x2": 0.6,
+                "y2": 0.6
+              },
               "orientation": "front"
             },
             {
               "slot_id": "S2-R1-P3",
               "position": 3,
-              "sku": "SKU-COLA-330",
+              "sku": "SKU-COLA-750",
               "expected_facings": 3,
-              "bbox": { "x1": 0.62, "y1": 0.37, "x2": 0.84, "y2": 0.6 },
+              "bbox": {
+                "x1": 0.62,
+                "y1": 0.37,
+                "x2": 0.84,
+                "y2": 0.6
+              },
               "orientation": "front"
             }
           ]
@@ -92,7 +128,10 @@
     {
       "shelf_id": "S3",
       "level": 3,
-      "y_range": [0.65, 0.95],
+      "y_range": [
+        0.65,
+        0.95
+      ],
       "rows": [
         {
           "row_id": "S3-R1",
@@ -103,15 +142,25 @@
               "position": 1,
               "sku": "SKU-BANANA-1KG",
               "expected_facings": 2,
-              "bbox": { "x1": 0.08, "y1": 0.68, "x2": 0.38, "y2": 0.92 },
+              "bbox": {
+                "x1": 0.08,
+                "y1": 0.68,
+                "x2": 0.38,
+                "y2": 0.92
+              },
               "orientation": "top"
             },
             {
               "slot_id": "S3-R1-P2",
               "position": 2,
-              "sku": "SKU-WATER-500",
+              "sku": "SKU-WATER-1L",
               "expected_facings": 6,
-              "bbox": { "x1": 0.4, "y1": 0.68, "x2": 0.72, "y2": 0.92 },
+              "bbox": {
+                "x1": 0.4,
+                "y1": 0.68,
+                "x2": 0.72,
+                "y2": 0.92
+              },
               "orientation": "front"
             }
           ]
@@ -123,6 +172,8 @@
     "author": "ShelfSight research team",
     "capture_rig": "1080p fixed shelf camera, 1.4 m standoff",
     "dataset_split": "validation",
-    "notes": "Reference layout used for the Phase 0 compliance benchmark."
+    "notes": "Reference layout for the Indian deployment. Geometry unchanged from the Phase 0 bay; slot SKUs retargeted to the rupee-priced catalogue.",
+    "region": "IN",
+    "currency": "INR"
   }
 }

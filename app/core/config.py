@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
+
+    # --- Locale -----------------------------------------------------------
+    #: Deployment region. Drives currency wording in LLM briefings; the frontend
+    #: reads NEXT_PUBLIC_LOCALE/NEXT_PUBLIC_CURRENCY for its own formatting.
+    CURRENCY: str = "INR"
+    CURRENCY_SYMBOL: str = "₹"
+    LOCALE: str = "en-IN"
 
     # --- CORS ------------------------------------------------------------
     CORS_ORIGINS: List[str] = Field(
@@ -110,6 +117,13 @@ class Settings(BaseSettings):
 
     # --- Freshness classifier extras --------------------------------------
     FRESHNESS_PRETRAINED: bool = True  # download ImageNet weights when training
+
+    # --- Dataset provider credentials -------------------------------------
+    #: Declared here so `.env` is the single place credentials live. Optional:
+    #: everything except `dataset_curator fetch` runs without them.
+    ROBOFLOW_API_KEY: Optional[str] = None
+    KAGGLE_USERNAME: Optional[str] = None
+    KAGGLE_KEY: Optional[str] = None
 
     # --- Ollama (local LLM insights) --------------------------------------
     OLLAMA_BASE_URL: str = "http://localhost:11434"

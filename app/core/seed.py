@@ -32,70 +32,80 @@ from app.services import planogram_store
 
 logger = get_logger(__name__)
 
-#: Seed catalogue. `detection_class_name` values are COCO-80 classes so the
-#: pretrained detector resolves them via data/class_map.json on first boot.
+#: Seed catalogue for an Indian kirana / modern-trade shelf.
+#:
+#: Two things are deliberate here:
+#: - **Prices are MRP in rupees.** A store manager shown "$41.40 at risk" on a
+#:   shelf priced in rupees misreads the exposure by roughly 85x, and every
+#:   value-at-risk figure in the dashboard and the LLM briefing derives from
+#:   `unit_price`.
+#: - **`detection_class_name` stays a COCO-80 class.** A Bisleri bottle is still
+#:   a `bottle` to the pretrained detector, so the seeded demo works on first
+#:   boot without a fine-tuned Indian SKU model.
 SEED_PRODUCTS: List[Dict[str, Any]] = [
     {
-        "sku": "SKU-WATER-500",
-        "name": "Spring Water 500ml",
+        "sku": "SKU-WATER-1L",
+        "name": "Packaged Drinking Water 1L",
         "category": "beverages",
-        "brand": "Blue Peak",
+        "brand": "Bisleri",
         "detection_class_name": "bottle",
-        "unit_price": 0.90,
+        "unit_price": 20.0,
         "system_stock": 18,
         "reorder_threshold": 8,
     },
     {
-        "sku": "SKU-COLA-330",
-        "name": "Cola Classic 330ml",
+        "sku": "SKU-COLA-750",
+        "name": "Cola 750ml",
         "category": "beverages",
-        "brand": "Fizzco",
+        "brand": "Thums Up",
         "detection_class_name": "cup",
-        "unit_price": 1.20,
+        "unit_price": 40.0,
         "system_stock": 12,
         "reorder_threshold": 6,
     },
     {
-        "sku": "SKU-CHIPS-150",
-        "name": "Salted Chips 150g",
+        "sku": "SKU-CHIPS-52",
+        "name": "Potato Chips 52g",
         "category": "snacks",
-        "brand": "Crispy",
+        "brand": "Lay's",
         "detection_class_name": "sandwich",
-        "unit_price": 2.40,
+        "unit_price": 20.0,
         "system_stock": 9,
         "reorder_threshold": 4,
     },
     {
-        "sku": "SKU-MILK-1L",
-        "name": "Whole Milk 1L",
+        "sku": "SKU-MILK-500",
+        "name": "Toned Milk 500ml",
         "category": "dairy",
-        "brand": "Meadow",
-        "detection_class_name": "vase",  # closest COCO carton-like class
-        "unit_price": 1.55,
+        "brand": "Amul",
+        "detection_class_name": "vase",  # closest COCO carton/pouch-like class
+        "unit_price": 28.0,
         "system_stock": 10,
         "reorder_threshold": 5,
         "is_perishable": True,
-        "shelf_life_days": 10,
+        # Indian ambient conditions shorten dairy shelf life relative to the
+        # cold chain assumed by most Western datasets.
+        "shelf_life_days": 3,
     },
     {
         "sku": "SKU-BANANA-1KG",
-        "name": "Bananas 1kg",
+        "name": "Robusta Banana 1kg",
         "category": "produce",
-        "brand": "FarmFresh",
+        "brand": "Fresh Produce",
         "detection_class_name": "banana",
-        "unit_price": 1.80,
+        "unit_price": 60.0,
         "system_stock": 7,
         "reorder_threshold": 3,
         "is_perishable": True,
-        "shelf_life_days": 6,
+        "shelf_life_days": 5,
     },
     {
         "sku": "SKU-APPLE-1KG",
-        "name": "Gala Apples 1kg",
+        "name": "Shimla Apple 1kg",
         "category": "produce",
-        "brand": "FarmFresh",
+        "brand": "Fresh Produce",
         "detection_class_name": "apple",
-        "unit_price": 2.10,
+        "unit_price": 180.0,
         "system_stock": 11,
         "reorder_threshold": 5,
         "is_perishable": True,
@@ -103,15 +113,15 @@ SEED_PRODUCTS: List[Dict[str, Any]] = [
     },
     {
         "sku": "SKU-ORANGE-1KG",
-        "name": "Navel Oranges 1kg",
+        "name": "Nagpur Orange 1kg",
         "category": "produce",
-        "brand": "FarmFresh",
+        "brand": "Fresh Produce",
         "detection_class_name": "orange",
-        "unit_price": 2.30,
+        "unit_price": 120.0,
         "system_stock": 8,
         "reorder_threshold": 4,
         "is_perishable": True,
-        "shelf_life_days": 12,
+        "shelf_life_days": 10,
     },
 ]
 

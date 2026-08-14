@@ -17,9 +17,15 @@ MONTH_TOKENS = {
     "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 
+#: Prefixes stripped before parsing. The Indian set matters as much as the
+#: Western one: FSSAI-labelled packs print "MFG"/"PKD"/"USE BY"/"BEST BEFORE
+#: <n> MONTHS FROM PACKAGING", and leaving "MFD." attached makes the date
+#: unparseable. `mfg`/`pkd` are stripped so a manufacture date still yields a
+#: date — the caller decides what to do with it.
 _PREFIX_RE = re.compile(
-    r"\b(exp(?:iry|ires|\.)?|e\.?x\.?p|best\s*before|bb[eé]?|use\s*by|ubd|bbd|"
-    r"consume\s*by|valid\s*(?:un)?til)\b[:\s.-]*",
+    r"\b(exp(?:iry|ires|\.)?|e\.?x\.?p|best\s*before(?:\s*date)?|bb[eé]?|use\s*by|ubd|bbd|"
+    r"consume\s*by|valid\s*(?:un)?til|mfg|mfd|pkd|packed\s*on|mfg\s*dt|exp\s*dt|"
+    r"date\s*of\s*(?:mfg|manufacture|packaging))\b[:\s.-]*",
     re.IGNORECASE,
 )
 _GLYPH_FIXES = str.maketrans({"O": "0", "o": "0", "I": "1", "l": "1", "|": "1", "S": "5", "B": "8"})
