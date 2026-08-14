@@ -300,36 +300,9 @@ def _stratified_split(
 def build_torch_dataset(items: Sequence[Tuple[Path, int]], transform: Any) -> Any:
     """Wrap `(path, label)` pairs in a `torch.utils.data.Dataset`.
 
-    Reads through `app.utils.vision.read_image_file`, which is the same ingestion
-    path the API uses — so training never sees images the API would reject, and
-    a corrupt file is skipped with a warning instead of killing an epoch.
+    The class itself lives in `models/torch_dataset.py` at module scope so that
+    `DataLoader(num_workers>0)` can pickle it — see the note there.
     """
-    import torch  # noqa: PLC0415
-    from PIL import Image as PILImage  # noqa: PLC0415
+    from models.torch_dataset import FreshnessDataset  # noqa: PLC0415 - needs torch
 
-    from app.utils.vision import ImageDecodeError, read_image_file, to_rgb  # noqa: PLC0415
-
-    class _FreshnessTorchDataset(torch.utils.data.Dataset):
-        def __init__(self) -> None:
-            self.items = list(items)
-            self.transform = transform
-            self.skipped = 0
-
-        def __len__(self) -> int:
-            return len(self.items)
-
-        def __getitem__(self, index: int):  # noqa: ANN201
-            path, label = self.items[index]
-            try:
-                array = to_rgb(read_image_file(path))
-            except ImageDecodeError as exc:
-                # One unreadable JPEG must not abort a 20-epoch run.
-                self.skipped += 1
-                logger.warning("Skipping unreadable image %s: %s", path, exc)
-                neighbour = (index + 1) % len(self.items)
-                if neighbour == index:
-                    raise DatasetError(f"No readable images in dataset: {exc}") from exc
-                return self.__getitem__(neighbour)
-            return self.transform(PILImage.fromarray(array)), label
-
-    return _FreshnessTorchDataset()
+    return FreshnessDataset(items, transform)

@@ -60,9 +60,21 @@ def main() -> int:
     metrics = model.val()
     best = Path(getattr(results, "save_dir", f"runs/detect/{args.name}")) / "weights" / "best.pt"
     if best.exists():
-        settings.DETECTION_WEIGHTS.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(best, settings.DETECTION_WEIGHTS)
-        logger.info("Deployed %s -> %s", best, settings.DETECTION_WEIGHTS)
+        # Deploy under a run-specific name, NOT over DETECTION_WEIGHTS.
+        # Clobbering that path destroyed the COCO baseline the seeded demo needs:
+        # the catalogue maps `bottle -> SKU-WATER-500` via data/class_map.json, and
+        # a fine-tuned model emitting `Cheetoz salty chips` makes every planogram
+        # slot read MISSING on a correctly stocked shelf. Point DETECTION_WEIGHTS
+        # at this file when you want the fine-tuned model served.
+        target = settings.DETECTION_WEIGHTS.parent / f"{args.name}.pt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(best, target)
+        logger.info("Saved %s -> %s", best, target)
+        logger.info(
+            "To serve it:  DETECTION_WEIGHTS=%s  (the COCO baseline at %s is untouched)",
+            target,
+            settings.DETECTION_WEIGHTS,
+        )
     else:
         logger.warning("best.pt not found at %s", best)
 
