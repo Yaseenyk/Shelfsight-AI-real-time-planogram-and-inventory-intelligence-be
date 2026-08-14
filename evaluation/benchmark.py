@@ -30,8 +30,10 @@ from app.core.logging import configure_logging, get_logger
 from app.schemas.planogram import PlanogramDocument
 from app.utils.vision import list_images
 from evaluation.detection_runner import run_detector_over_directory
+from evaluation.freshness_runner import run_classifier_over_directory
 from evaluation.metrics import classification, compliance, detection, ocr
 from evaluation.metrics.plotting import plot_metric_bars
+from evaluation.ocr_runner import run_ocr_over_directory
 
 logger = get_logger(__name__)
 
@@ -46,9 +48,11 @@ DEFAULT_DETECTION_PREDICTIONS = GT_DIR / "detection_predictions.example.json"
 DEFAULT_DETECTION_TARGETS = GT_DIR / "detection_targets.example.json"
 DEFAULT_FRESHNESS_LABELS = GT_DIR / "freshness_labels.example.json"
 
-#: Live-inference frame directory (Phase 1). When it holds images, the detection
-#: suite runs the real model instead of replaying the JSON fixtures.
-DEFAULT_TEST_IMAGES = settings.DATA_DIR / "test_images"
+#: Live-inference directories. When one holds images, that suite runs the real
+#: model instead of replaying the JSON fixtures.
+DEFAULT_TEST_IMAGES = settings.DATA_DIR / "test_images"  # Phase 1: detection
+DEFAULT_FRESHNESS_IMAGES = settings.DATA_DIR / "test_freshness"  # Phase 2: classifier
+DEFAULT_EXPIRY_IMAGES = settings.DATA_DIR / "test_expiry"  # Phase 2: OCR
 
 
 # --- helpers ---------------------------------------------------------------
@@ -211,16 +215,45 @@ def run_detection(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
 
 
 def run_freshness(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
-    """Top-1 accuracy, macro/micro F1 and the confusion-matrix figure."""
-    labels_path = Path(args.labels or DEFAULT_FRESHNESS_LABELS)
-    if not labels_path.exists():
-        logger.warning("freshness: %s missing, skipping", labels_path)
-        return {"skipped": "missing labels"}
-    if not args.labels:
-        logger.warning("freshness: using example fixtures — not publication numbers")
+    """Top-1 accuracy, macro/micro F1 and the confusion-matrix figure.
 
-    payload = load_json(labels_path)
-    samples = payload.get("samples", payload) if isinstance(payload, dict) else payload
+    Live mode runs the real classifier over `data/test_freshness/` (labels taken
+    from the folder names); replay mode scores a predictions JSON.
+    """
+    images_dir = Path(args.freshness_dir or DEFAULT_FRESHNESS_IMAGES)
+    source: Dict[str, Any] = {}
+
+    if not args.labels and images_dir.exists() and list_images(images_dir):
+        logger.info("freshness: live inference over %s", images_dir)
+        run = run_classifier_over_directory(
+            images_dir,
+            class_map_file=Path(args.class_map) if args.class_map else None,
+            limit=args.limit,
+        )
+        samples = run["samples"]
+        source = {
+            "mode": "live",
+            "images_dir": str(images_dir),
+            "frames": run["images"],
+            "skipped": run["skipped"],
+            "model_version": run.get("model_version"),
+            "folder_mapping": run.get("folder_mapping"),
+        }
+        if not samples:
+            return {"skipped": run.get("note", "no crops classified"), "source": source}
+        write_report(run_dir, "freshness_predictions", {"source": source, "samples": samples})
+    else:
+        labels_path = Path(args.labels or DEFAULT_FRESHNESS_LABELS)
+        if not labels_path.exists():
+            logger.warning("freshness: %s missing, skipping", labels_path)
+            return {"skipped": "missing labels"}
+        if not args.labels:
+            logger.warning("freshness: using example fixtures — not publication numbers")
+
+        payload = load_json(labels_path)
+        samples = payload.get("samples", payload) if isinstance(payload, dict) else payload
+        source = {"mode": "replay", "labels": str(labels_path)}
+
     y_true = [s["truth_label"] for s in samples]
     y_pred = [s["predicted_label"] for s in samples]
 
@@ -231,6 +264,10 @@ def run_freshness(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
         report_dir=run_dir,
         prefix="freshness",
     )
+    result["source"] = source
+    latencies = [s.get("latency_ms") for s in samples if s.get("latency_ms") is not None]
+    if latencies:
+        result["latency"] = detection.latency_stats(latencies)
     result["figure_metrics"] = str(
         plot_metric_bars(
             {
@@ -247,15 +284,60 @@ def run_freshness(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
 
 
 def run_ocr(args: argparse.Namespace, run_dir: Path) -> Dict[str, Any]:
-    """CER, WER and date-parsing precision against the labelled expiry set."""
-    path = Path(args.ground_truth or DEFAULT_EXPIRY_GT)
-    if not path.exists():
-        logger.warning("ocr: ground truth %s missing, skipping", path)
-        return {"skipped": f"missing {path}"}
+    """CER, WER and date-parsing precision against the labelled expiry set.
 
-    payload = load_json(path)
-    samples = payload.get("samples", payload) if isinstance(payload, dict) else payload
+    Live mode OCRs real packaging crops from `data/test_expiry/`; replay mode
+    scores pre-transcribed text from a ground-truth JSON.
+    """
+    images_dir = Path(args.ocr_dir or DEFAULT_EXPIRY_IMAGES)
+    source: Dict[str, Any] = {}
+
+    if not args.ground_truth and images_dir.exists() and list_images(images_dir):
+        logger.info("ocr: live OCR over %s", images_dir)
+        run = run_ocr_over_directory(images_dir, limit=args.limit)
+        samples = run["samples"]
+        source = {
+            "mode": "live",
+            "images_dir": str(images_dir),
+            "frames": run["images"],
+            "labelled_images": run["labelled_images"],
+            "ground_truth_file": run["ground_truth_file"],
+            "variant_usage": run["variant_usage"],
+            "skipped": run["skipped"],
+            "model_version": run.get("model_version"),
+        }
+        if not samples:
+            return {"skipped": run.get("note", "no crops read"), "source": source}
+        write_report(run_dir, "ocr_reads", {"source": source, "samples": samples})
+
+        if run["labelled_images"] == 0:
+            # Latency and read-rate are real; accuracy without labels is not.
+            logger.warning("ocr: no ground truth — reporting latency and read rate only")
+            read = sum(1 for s in samples if s.get("predicted_date"))
+            return {
+                "source": source,
+                "support": len(samples),
+                "date_read_rate": round(read / len(samples), 4),
+                "latency": detection.latency_stats(run["latencies_ms"]),
+                "note": (
+                    "No ground-truth CSV/JSON found; CER/WER and date precision omitted. "
+                    f"Add ground_truth.csv beside {images_dir}."
+                ),
+            }
+    else:
+        path = Path(args.ground_truth or DEFAULT_EXPIRY_GT)
+        if not path.exists():
+            logger.warning("ocr: ground truth %s missing, skipping", path)
+            return {"skipped": f"missing {path}"}
+        payload = load_json(path)
+        samples = payload.get("samples", payload) if isinstance(payload, dict) else payload
+        source = {"mode": "replay", "ground_truth": str(path)}
+
     result = ocr.evaluate(samples, dayfirst=settings.EXPIRY_DAYFIRST)
+    result["source"] = source
+    latencies = [s.get("latency_ms") for s in samples if s.get("latency_ms") is not None]
+    if latencies:
+        result["latency"] = detection.latency_stats(latencies)
     result["figure"] = str(
         plot_metric_bars(
             {
@@ -330,6 +412,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--labels-dir", help="YOLO-format .txt labels (default: <images>/labels)")
     parser.add_argument("--conf", type=float, help="override the detector confidence threshold")
     parser.add_argument("--limit", type=int, help="cap the number of frames inferred")
+    parser.add_argument(
+        "--freshness-dir",
+        help=f"labelled produce crops for live classification (default: {DEFAULT_FRESHNESS_IMAGES})",
+    )
+    parser.add_argument(
+        "--class-map", help="JSON overriding the freshness folder→label mapping"
+    )
+    parser.add_argument(
+        "--ocr-dir",
+        help=f"packaging crops for live OCR (default: {DEFAULT_EXPIRY_IMAGES})",
+    )
     parser.add_argument("--run-id", help="override the generated run directory name")
     args = parser.parse_args(argv)
 

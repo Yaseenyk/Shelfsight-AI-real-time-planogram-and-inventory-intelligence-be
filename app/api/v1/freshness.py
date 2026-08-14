@@ -10,62 +10,112 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Pagination, complete_session, create_session, get_db, save_upload
-from app.models.enums import FreshnessLabel
+from app.models.enums import FreshnessLabel, ScanStatus
 from app.models.freshness import FreshnessAudit
 from app.models.product import Product
 from app.schemas.freshness import (
     FreshnessAuditRead,
     FreshnessClassifyRequest,
     FreshnessClassifyResponse,
-    FreshnessPrediction,
     FreshnessSummary,
 )
-from app.services.freshness import get_freshness_service
+from app.services.freshness import (
+    FreshnessError,
+    FreshnessResult,
+    FreshnessUnavailableError,
+    get_freshness_service,
+)
+from app.utils.vision import ImageDecodeError, decode_image_bytes, read_image_file
 
 router = APIRouter()
 
 
 @router.post("/classify", response_model=FreshnessClassifyResponse)
+async def classify_image(
+    file: UploadFile = File(..., description="Produce crop (JPEG/PNG/WebP/BMP)"),
+    product_sku: Optional[str] = Form(default=None),
+    persist: bool = Form(default=True),
+    db: Session = Depends(get_db),
+) -> FreshnessClassifyResponse:
+    """Classify a perishable crop as Fresh / Ripening / Spoiled.
+
+    Returns the predicted label, softmax probabilities for **all three** classes
+    and latency, and writes a `FreshnessAudit` row. A frame that fails is
+    recorded as a `FAILED` scan session rather than disappearing.
+    """
+    started = time.perf_counter()
+    payload = await file.read()
+    await file.seek(0)
+
+    try:
+        frame = decode_image_bytes(payload)
+    except ImageDecodeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    image_path = await save_upload(file)
+    session = create_session(db, image_path=image_path)
+
+    service = get_freshness_service()
+    try:
+        result = service.predict_freshness(frame)
+    except FreshnessUnavailableError as exc:
+        _fail_session(db, session, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except FreshnessError as exc:
+        _fail_session(db, session, str(exc))
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
+
+    session.image_width = result.image_width
+    session.image_height = result.image_height
+
+    if persist:
+        _persist(db, session.id, [result], product_sku, service.version)
+    latency_ms = (time.perf_counter() - started) * 1000.0
+    complete_session(db, session, total_latency_ms=latency_ms)
+    return _to_response(session.session_uid, [result], latency_ms)
+
+
+@router.post("/classify/batch", response_model=FreshnessClassifyResponse)
 def classify_paths(
     payload: FreshnessClassifyRequest, db: Session = Depends(get_db)
 ) -> FreshnessClassifyResponse:
-    """Classify crops already on disk (batch / evaluation path)."""
+    """Classify crops already on disk — the batch/evaluation path."""
+    started = time.perf_counter()
     service = get_freshness_service()
-    predictions, latency_ms = service.predict(payload.image_paths)
-    if not service.is_ready:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Freshness weights unavailable — train via models/train_freshness.py",
-        )
+
+    try:
+        images = [read_image_file(path) for path in payload.image_paths]
+    except ImageDecodeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    try:
+        results = service.predict_batch(images)
+    except FreshnessUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except FreshnessError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
 
     session = create_session(db)
-    _persist(db, session.id, predictions, payload.product_sku, service.version, payload.persist)
+    if payload.persist:
+        _persist(db, session.id, results, payload.product_sku, service.version)
+    latency_ms = (time.perf_counter() - started) * 1000.0
     complete_session(db, session, total_latency_ms=latency_ms)
-    return _to_response(session.session_uid, predictions, latency_ms)
+    return _to_response(session.session_uid, results, latency_ms)
 
 
-@router.post("/classify/image", response_model=FreshnessClassifyResponse)
+@router.post(
+    "/classify/image",
+    response_model=FreshnessClassifyResponse,
+    deprecated=True,
+    summary="Deprecated alias for POST /freshness/classify",
+)
 async def classify_upload(
     file: UploadFile = File(...),
     product_sku: Optional[str] = Form(default=None),
     db: Session = Depends(get_db),
 ) -> FreshnessClassifyResponse:
-    started = time.perf_counter()
-    image_path = await save_upload(file)
-
-    service = get_freshness_service()
-    predictions, _ = service.predict([str(image_path)])
-    if not service.is_ready:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Freshness weights unavailable — train via models/train_freshness.py",
-        )
-
-    session = create_session(db, image_path=image_path)
-    _persist(db, session.id, predictions, product_sku, service.version, persist=True)
-    latency_ms = (time.perf_counter() - started) * 1000.0
-    complete_session(db, session, total_latency_ms=latency_ms)
-    return _to_response(session.session_uid, predictions, latency_ms)
+    """Phase 0 route name, kept so existing clients do not break."""
+    return await classify_image(file=file, product_sku=product_sku, persist=True, db=db)
 
 
 @router.get("/audits", response_model=List[FreshnessAuditRead])
@@ -100,16 +150,23 @@ def summary(db: Session = Depends(get_db)) -> FreshnessSummary:
     )
 
 
+# ------------------------------------------------------------------ helpers --
+def _fail_session(db: Session, session, message: str) -> None:  # noqa: ANN001
+    session.status = ScanStatus.FAILED
+    session.error_message = message[:1024]
+    db.flush()
+
+
 def _persist(
     db: Session,
     session_id: Optional[int],
-    predictions: List[FreshnessPrediction],
+    results: List[FreshnessResult],
     product_sku: Optional[str],
     model_version: str,
-    persist: bool,
 ) -> None:
-    if not persist or not predictions:
+    if not results:
         return
+
     product_id = None
     if product_sku:
         product = db.execute(
@@ -121,26 +178,26 @@ def _persist(
         FreshnessAudit(
             session_id=session_id,
             product_id=product_id,
-            label=prediction.label,
-            confidence=prediction.confidence,
-            class_probabilities=prediction.class_probabilities,
-            bbox=list(prediction.bbox.as_tuple()) if prediction.bbox else None,
-            backbone=prediction.backbone,
+            label=result.label,
+            confidence=result.confidence,
+            class_probabilities=result.probabilities,
+            bbox=list(result.bbox.as_tuple()) if result.bbox else None,
+            backbone=result.backbone,
             model_version=model_version,
-            latency_ms=prediction.latency_ms,
+            latency_ms=result.latency_ms,
         )
-        for prediction in predictions
+        for result in results
     )
     db.flush()
 
 
 def _to_response(
-    session_uid: str, predictions: List[FreshnessPrediction], latency_ms: float
+    session_uid: str, results: List[FreshnessResult], latency_ms: float
 ) -> FreshnessClassifyResponse:
     return FreshnessClassifyResponse(
         session_uid=session_uid,
-        predictions=predictions,
-        spoiled_count=sum(1 for p in predictions if p.label is FreshnessLabel.SPOILED),
-        ripening_count=sum(1 for p in predictions if p.label is FreshnessLabel.RIPENING),
+        predictions=[result.to_prediction() for result in results],
+        spoiled_count=sum(1 for r in results if r.label is FreshnessLabel.SPOILED),
+        ripening_count=sum(1 for r in results if r.label is FreshnessLabel.RIPENING),
         latency_ms=round(latency_ms, 2),
     )

@@ -86,8 +86,27 @@ class Settings(BaseSettings):
     OCR_LANGUAGES: List[str] = Field(default_factory=lambda: ["en"])
     OCR_GPU: bool = False
     OCR_MIN_CONFIDENCE: float = 0.30
+    #: Preprocessing variants tried in order until one yields a parseable date.
+    #: See app/services/ocr_expiry.py for what each does and why.
+    OCR_VARIANTS: List[str] = Field(
+        default_factory=lambda: ["raw", "clahe_sharpen", "otsu", "adaptive_close", "otsu_invert"]
+    )
+    #: Upscale crops shorter than this before OCR — EasyOCR's recogniser drops
+    #: off sharply below ~20px glyph height, and date stamps are small.
+    OCR_MIN_HEIGHT: int = 320
+    OCR_UPSCALE_FACTOR: float = 2.0
+    #: Stop trying variants once one returns a date at or above this confidence.
+    OCR_EARLY_STOP_CONFIDENCE: float = 0.60
+    #: Wall-clock ceiling for one crop. Without it, an unreadable image costs the
+    #: full variant sweep (~11 s on CPU) because nothing ever triggers early stop
+    #: — the worst case lands on exactly the frames that yield nothing.
+    OCR_TIME_BUDGET_MS: float = 6000.0
+    OCR_ALLOW_DOWNLOAD: bool = True  # EasyOCR fetches its models on first use
     EXPIRY_NEAR_THRESHOLD_DAYS: int = 7
     EXPIRY_DAYFIRST: bool = True  # DD/MM/YYYY is the dominant retail format
+
+    # --- Freshness classifier extras --------------------------------------
+    FRESHNESS_PRETRAINED: bool = True  # download ImageNet weights when training
 
     # --- Ollama (local LLM insights) --------------------------------------
     OLLAMA_BASE_URL: str = "http://localhost:11434"
@@ -96,7 +115,9 @@ class Settings(BaseSettings):
     OLLAMA_TEMPERATURE: float = 0.2
     OLLAMA_NUM_PREDICT: int = 512
 
-    @field_validator("CORS_ORIGINS", "FRESHNESS_CLASSES", "OCR_LANGUAGES", mode="before")
+    @field_validator(
+        "CORS_ORIGINS", "FRESHNESS_CLASSES", "OCR_LANGUAGES", "OCR_VARIANTS", mode="before"
+    )
     @classmethod
     def _split_csv(cls, value: object) -> object:
         """Allow `A,B,C` style env values in addition to JSON arrays."""

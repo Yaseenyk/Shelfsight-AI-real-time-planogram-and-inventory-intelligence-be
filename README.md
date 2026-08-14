@@ -62,6 +62,36 @@ returns the per-slot verdicts, the raw detections, and the timing breakdown:
 Unreadable uploads return **422** with the reason, a missing model returns **503**,
 and a failed frame is recorded as a `FAILED` scan session rather than vanishing.
 
+### Freshness & expiry (Phase 2)
+
+```bash
+# Train the classifier on any Kaggle/Roboflow freshness dataset.
+# --dry-run prints the folder→label mapping before spending GPU time on it.
+python models/train_freshness.py --data-dir data/freshness --dry-run
+python models/train_freshness.py --data-dir data/freshness --epochs 25
+
+curl -F "file=@banana.jpg" http://localhost:8000/api/v1/freshness/classify
+curl -F "file=@stamp.jpg" -F "reference_date=2026-08-14" \
+     http://localhost:8000/api/v1/expiry/extract
+```
+
+The OCR endpoint returns the raw text, the winning candidate and which
+preprocessing variant produced it:
+
+```json
+{
+  "best": { "parsed_date": "2026-09-12", "status": "valid",
+            "matched_pattern": "numeric_dmy", "days_remaining": 29 },
+  "raw_text": "EXP 12/09/2026",
+  "variant_used": "raw",
+  "variants_tried": ["raw"]
+}
+```
+
+> **An unreadable stamp is a 200, not an error.** "No date found" is a real audit
+> outcome the dashboard must show; only a broken OCR engine produces a 5xx.
+> Verdicts: `expired` (< today), `near_expiry` (≤ 7 days), `valid` (> 7 days).
+
 ---
 
 ## Project layout
@@ -80,7 +110,7 @@ be/
 │  │                          freshness · ocr_expiry · llm_client · planogram_store
 │  └─ utils/                  vision (OpenCV ingest/preprocess) ·
 │                             geometry (IoU, Euclidean, row sorting) · dates (expiry regex)
-├─ models/                    training scripts + weights/ (git-ignored)
+├─ models/                    dataset loader + training scripts + weights/ (git-ignored)
 ├─ evaluation/                benchmark.py + metrics/ + reports/
 ├─ data/                      planogram schema & instances, ground truth, uploads
 └─ tests/                     pytest suite (runs without torch)
@@ -99,10 +129,11 @@ be/
 | `POST` | `/planogram/compliance` | Compliance from a supplied detection set |
 | `POST` | `/planogram/compliance/image` | Deprecated alias for `/verify` |
 | `GET` | `/planogram/audits[/latest]` | Compliance history |
-| `POST` | `/freshness/classify[/image]` | Fresh / Ripening / Spoiled |
+| `POST` | **`/freshness/classify`** | **Upload → CNN → Fresh / Ripening / Spoiled (Phase 2)** |
+| `POST` | `/freshness/classify/batch` | Classify crops already on disk |
 | `GET` | `/freshness/audits` \| `/summary` | Spoilage history and rate |
+| `POST` | **`/expiry/extract`** | **Upload → EasyOCR → date → validity status (Phase 2)** |
 | `POST` | `/expiry/parse` | Text-only date normalisation (no OCR needed) |
-| `POST` | `/expiry/extract/image` | EasyOCR → regex → validity status |
 | `GET` | `/expiry/audits` \| `/summary` | Expiry history, read rate |
 | `GET` | `/insights/status` \| `/context` | Ollama reachability, the exact LLM input |
 | `POST` | `/insights/generate` | Executive briefing (falls back if Ollama is down) |

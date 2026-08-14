@@ -214,9 +214,80 @@ Complexity is `O(S·D)` per shelf (slots × detections); at realistic shelf size
 (≤ 40 slots, ≤ 100 detections) this is sub-millisecond, so the reported compliance
 latency is dominated by detection, not by matching.
 
+## 4a. Freshness classification (Phase 2)
+
+`app/services/freshness.py`, mirroring the detector's lifecycle contract
+(singleton + load lock, lazy torch import, explicit failure).
+
+```python
+result = get_freshness_service().predict_freshness(bgr_crop)
+result.label          # FreshnessLabel.SPOILED
+result.probabilities  # {"fresh": 0.02, "ripening": 0.11, "spoiled": 0.87}
+```
+
+- **The class list lives in the checkpoint**, not in config. Label order is a
+  property of the trained head; reading it from a settings list is how a model
+  silently starts reporting "spoiled" for fresh produce after someone reorders
+  that list. `models/train_freshness.py` writes `state_dict` + `backbone` +
+  `classes` + `input_size` together.
+- **Checkpoint loading tries the safe path first.** torch ≥ 2.6 defaults to
+  `weights_only=True`; a pickled module needs the unsafe path, which is
+  attempted second *and logged*, so an operator knows when arbitrary pickle runs.
+- **Dataset class names are coerced, not rejected.** `rotten`, `overripe`,
+  `good_quality` map onto the three canonical labels — with compound forms
+  (`overripe`, `notfresh`) tested before the bare keywords they contain.
+- Batch inference is the default internally: a shelf frame yields one crop per
+  detected perishable, and paying per-call overhead N times stalls a scan.
+
+### Datasets — `models/dataset.py`
+
+Public freshness datasets disagree on layout (Kaggle `train/freshapples/`,
+Roboflow `train/Fresh/`, flat `fresh/`) and on vocabulary. `FreshnessDataset.discover()`
+resolves all three, maps folder names by keyword (overridable with a JSON table),
+and **reports what it could not map** instead of silently absorbing it.
+
+It also surfaces the structural problem with this corpus: most public sets are
+**binary** (fresh/rotten) and contain no `ripening` class at all. `describe()`
+prints a warning so an empty confusion-matrix row is visibly a dataset property,
+not a model failure. Without an in-house `ripening` set, the three-class claim
+cannot be evidenced — that is a Phase 3 data task, not a modelling one.
+
 ## 5. Expiry OCR pipeline
 
-`app/utils/dates.py` → `app/services/ocr_expiry.py`.
+`app/services/ocr_expiry.py` (OCR + variant strategy) → `app/utils/dates.py`
+(normalisation + parsing).
+
+### Why a variant sweep, not one preprocessing choice
+
+Expiry codes are the worst text on a package: dot-matrix/inkjet clouds of
+disconnected dots, on curved foil, low contrast, often light-on-dark. Any single
+preprocessing choice that fixes one case breaks another. The service therefore
+runs an ordered list of variants and stops at the first that yields a *parseable
+date* above `OCR_EARLY_STOP_CONFIDENCE`:
+
+| Variant | What it fixes |
+| --- | --- |
+| `raw` | Clean laser/thermal print (upscaled — EasyOCR degrades below ~20px glyphs) |
+| `clahe_sharpen` | Faint ink; recovers contrast without blowing highlights |
+| `otsu` | Flat, evenly-lit labels |
+| `adaptive_close` | **Dot-matrix**: local threshold + 2px morphological close bridges the dot cloud into continuous strokes |
+| `otsu_invert` | Light-on-dark stamps, which otherwise read as noise |
+
+Measured on rendered stamps: clean dates resolve on `raw` in ~2.4 s (CPU); a
+dot-matrix stamp only resolves after falling through to `clahe_sharpen`. The
+report records `variant_usage`, which is the evidence that the sweep earns its
+cost.
+
+**A time budget bounds the worst case.** An unreadable crop satisfies no
+early-stop rule, so it used to pay the entire sweep (~11.6 s measured) — the
+worst latency landing on exactly the frames that produce nothing.
+`OCR_TIME_BUDGET_MS` (default 6 s) caps it.
+
+Two candidates are also formed per crop that a naive reader would miss: each OCR
+line individually, **and** all lines joined — a date split across
+`BEST BEFORE` / `12 09 2026` only parses when concatenated.
+
+### Parsing — `app/utils/dates.py`
 
 1. **Prefix strip** — `EXP`, `EXP.`, `BB`, `BBE`, `BBD`, `USE BY`, `BEST BEFORE`,
    `CONSUME BY`, `VALID UNTIL`, `UBD`.
@@ -225,6 +296,9 @@ latency is dominated by detection, not by matching.
 3. **Pattern match**, first hit wins: `iso_ymd`, `compact_ymd`, `dmy_alpha`, `mdy_alpha`,
    `my_alpha`, `numeric_dmy` (ambiguity resolved by `EXPIRY_DAYFIRST`, with the
    opposite order as fallback when the first read is an impossible date), `numeric_my`.
+   `numeric_dmy` accepts **whitespace as a separator** (`12 09 2026`): OCR
+   routinely loses faint slashes, and requiring punctuation silently drops a
+   large share of real reads.
 4. **Two-digit year pivot** — `00–79 → 20xx`, `80–99 → 19xx`.
 5. **Status** — `expired` (`days_remaining < 0`), `near_expiry`
    (`≤ EXPIRY_NEAR_THRESHOLD_DAYS`), `valid`, or `unreadable` when nothing parses.
@@ -283,17 +357,25 @@ figure or transcript included in the paper.
 | --- | --- | --- |
 | **0** | Architecture, schema, contracts, API skeleton, evaluation harness, dashboard shell | done |
 | **1** | OpenCV ingestion, YOLOv8 wrapper + NMS, detection→compliance wiring, live detection benchmark | done |
-| 2 | Dataset collection & annotation; YOLOv8 fine-tuning on real SKU classes; published detection numbers | next |
-| 3 | Freshness CNN training; OCR tuning on real packaging; per-format error analysis | |
-| 4 | Live camera streaming (WebSocket), alert persistence, Ollama prompt tuning | |
-| 5 | Full benchmark run, ablations (IoU / centre-distance thresholds), paper figures | |
+| **2** | Freshness CNN service + dataset loader + training; EasyOCR variant pipeline; upload endpoints; live freshness/OCR benchmark runners | done |
+| 3 | **Data**: annotate shelf frames for SKU classes; source a 3-class freshness set incl. `ripening`; photograph real dot-matrix stamps | next |
+| 4 | Fine-tune YOLOv8 + freshness CNN on that data; publishable accuracy numbers | |
+| 5 | Live camera streaming (WebSocket), alert persistence, Ollama prompt tuning | |
+| 6 | Full benchmark run, ablations (IoU / centre-distance / OCR variants), paper figures | |
 
-### What Phase 1 does *not* yet give the paper
+### What Phases 1–2 do *not* yet give the paper
 
-The detector is a **stock COCO-pretrained YOLOv8n**. It detects `bottle`,
-`banana`, `person`… — not retail SKUs. `data/class_map.json` bridges the two so
-the full pipeline runs end-to-end today, but every detection metric produced
-before Phase 2 fine-tuning is an **integration check, not a result**. In
-particular, scoring the detector against labels derived from its own predictions
-yields mAP = 1.0 by construction; only human-annotated frames in
-`data/test_images/labels/` produce a citable number.
+Every pipeline is wired, instrumented and tested. **None of the accuracy numbers
+are citable yet**, for reasons that are about data, not code:
+
+| Pipeline | Why the current number is not a result |
+| --- | --- |
+| Detection | Stock COCO-pretrained YOLOv8n detects `bottle`/`banana`/`person`, not SKUs. `data/class_map.json` bridges it so the pipeline runs today. Scoring against labels derived from its own predictions yields mAP = 1.0 by construction. |
+| Freshness | Verified against a synthetic colour-separable set (val 0.83 after 3 head-only epochs). That measures the *plumbing*. A real dataset is needed — and most public ones are binary, so `ripening` needs sourcing. |
+| OCR | CER/WER = 0.0 on **rendered** text is a property of the renderer, not the engine. Real dot-matrix photographs will be far harsher. |
+| Compliance | Runs on hand-authored fixtures; needs labelled shelf frames. |
+
+The harness is built to make that distinction visible rather than convenient:
+live runs log `not publication numbers` when they fall back to fixtures, record
+the `backend` that computed each metric, and omit accuracy entirely when labels
+are absent instead of inventing it.

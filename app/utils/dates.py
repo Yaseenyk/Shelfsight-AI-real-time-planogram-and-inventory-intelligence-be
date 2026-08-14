@@ -92,7 +92,10 @@ _PATTERNS: List[Tuple[str, re.Pattern, object]] = [
     ),
     (
         "numeric_dmy",  # ambiguity resolved by `dayfirst`
-        re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})\b"),
+        # Whitespace counts as a separator: OCR routinely loses faint slashes and
+        # dots, so "12 09 2026" is the same stamp as "12/09/2026". Requiring a
+        # punctuation separator here silently drops a large share of real reads.
+        re.compile(r"\b(\d{1,2})[./\-\s](\d{1,2})[./\-\s](\d{2,4})\b"),
         None,  # handled specially below
     ),
     (

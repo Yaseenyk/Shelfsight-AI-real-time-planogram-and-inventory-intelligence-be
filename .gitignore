@@ -31,9 +31,14 @@ data/uploads/
 data/samples/
 data/crops/
 
-# Benchmark frames — datasets stay out of the repo (keep the README)
+# Benchmark frames — datasets stay out of the repo (keep the READMEs)
 data/test_images/**
 !data/test_images/README.md
+data/test_freshness/**
+!data/test_freshness/README.md
+data/test_expiry/**
+!data/test_expiry/README.md
+data/freshness/
 
 # Evaluation output
 evaluation/reports/*

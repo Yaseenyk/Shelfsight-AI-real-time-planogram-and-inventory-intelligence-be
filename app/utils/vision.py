@@ -328,6 +328,134 @@ def crop(image: "Image", box: Sequence[float], padding: float = 0.0) -> "Image":
     return image[py1:py2, px1:px2]
 
 
+# -------------------------------------------------- OCR preprocessing ops --
+def to_grayscale(image: "Image") -> "Image":
+    """Single-channel view of a frame. Idempotent on already-gray input."""
+    cv2 = _cv2()
+    meta = describe(image)
+    if meta.channels == 1:
+        return image
+    if meta.channels == 4:
+        return cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
+def otsu_threshold(image: "Image", invert: bool = False) -> "Image":
+    """Global Otsu binarisation — the right default for a flat, evenly-lit label.
+
+    `invert` matters more than it looks: EasyOCR is trained on dark text over a
+    light background, so a light-on-dark stamp must be flipped or it reads as
+    noise.
+    """
+    cv2 = _cv2()
+    gray = to_grayscale(image)
+    flags = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
+    _, binary = cv2.threshold(gray, 0, 255, flags + cv2.THRESH_OTSU)
+    return binary
+
+
+def adaptive_threshold(
+    image: "Image", block_size: int = 31, offset: int = 10, invert: bool = False
+) -> "Image":
+    """Local thresholding for uneven lighting — curved bottles, shadowed shelves.
+
+    `block_size` must be odd and > 1; it is snapped rather than rejected so a
+    caller tuning it from config cannot crash the request.
+    """
+    cv2 = _cv2()
+    gray = to_grayscale(image)
+    block = max(3, int(block_size) | 1)  # force odd
+    flags = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
+    return cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, flags, block, int(offset)
+    )
+
+
+def morphology(
+    image: "Image",
+    operation: str = "close",
+    kernel_size: int = 2,
+    iterations: int = 1,
+) -> "Image":
+    """Dilate / erode / open / close.
+
+    The reason this exists: expiry codes are printed by **dot-matrix / inkjet**
+    heads, so each glyph is a cloud of disconnected dots. A small `close` (or
+    `dilate`) bridges those dots into continuous strokes, which is the
+    difference between EasyOCR reading `12/09/2026` and reading nothing at all.
+    Too large a kernel merges neighbouring digits into blobs, hence the small
+    default.
+    """
+    cv2 = _cv2()
+    np = _np()
+
+    size = max(1, int(kernel_size))
+    kernel = np.ones((size, size), np.uint8)
+    ops = {
+        "dilate": cv2.dilate,
+        "erode": cv2.erode,
+    }
+    if operation in ops:
+        return ops[operation](image, kernel, iterations=int(iterations))
+
+    morph_types = {
+        "open": cv2.MORPH_OPEN,
+        "close": cv2.MORPH_CLOSE,
+        "gradient": cv2.MORPH_GRADIENT,
+        "tophat": cv2.MORPH_TOPHAT,
+    }
+    if operation not in morph_types:
+        raise ValueError(
+            f"Unknown morphology operation '{operation}'; "
+            f"expected one of dilate, erode, {', '.join(morph_types)}"
+        )
+    return cv2.morphologyEx(image, morph_types[operation], kernel, iterations=int(iterations))
+
+
+def enhance_contrast(image: "Image", clip_limit: float = 2.0, tile: int = 8) -> "Image":
+    """CLAHE on the luminance channel — recovers faint ink without blowing highlights."""
+    cv2 = _cv2()
+    gray = to_grayscale(image)
+    clahe = cv2.createCLAHE(clipLimit=float(clip_limit), tileGridSize=(int(tile), int(tile)))
+    return clahe.apply(gray)
+
+
+def denoise(image: "Image", strength: int = 5) -> "Image":
+    """Median blur. Kills salt-and-pepper speckle without softening glyph edges."""
+    cv2 = _cv2()
+    return cv2.medianBlur(image, max(1, int(strength) | 1))
+
+
+def sharpen(image: "Image") -> "Image":
+    """Unsharp mask — mild, since over-sharpening turns dot-matrix ink into noise."""
+    cv2 = _cv2()
+    blurred = cv2.GaussianBlur(image, (0, 0), 3)
+    return cv2.addWeighted(image, 1.5, blurred, -0.5, 0)
+
+
+def upscale(image: "Image", factor: float = 2.0, min_height: int = 0) -> "Image":
+    """Enlarge a small crop before OCR.
+
+    EasyOCR's recogniser degrades below roughly 20px glyph height; a date stamp
+    cropped from a shelf frame is routinely smaller than that. `min_height`
+    upscales only as far as needed instead of always paying the fixed factor.
+    """
+    cv2 = _cv2()
+    meta = describe(image)
+    scale = float(factor)
+    if min_height and meta.height < min_height:
+        scale = max(scale, min_height / meta.height)
+    if scale <= 1.0:
+        return image
+
+    target_w = int(meta.width * scale)
+    target_h = int(meta.height * scale)
+    if target_w * target_h > MAX_IMAGE_PIXELS:
+        return image
+    # INTER_CUBIC keeps thin strokes intact where INTER_LINEAR smears them.
+    return cv2.resize(image, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+
+
 def encode_jpeg(image: "Image", quality: int = 90) -> bytes:
     """Encode a BGR array back to JPEG bytes (annotated-frame responses)."""
     cv2 = _cv2()
@@ -355,18 +483,26 @@ __all__ = [
     "LetterboxResult",
     "MAX_IMAGE_PIXELS",
     "MIN_IMAGE_SIDE",
+    "adaptive_threshold",
     "crop",
     "decode_image_bytes",
+    "denoise",
     "denormalize_box",
     "describe",
     "encode_jpeg",
+    "enhance_contrast",
     "letterbox",
     "list_images",
     "load_image",
+    "morphology",
     "normalize_box",
+    "otsu_threshold",
     "preprocess",
     "read_image_file",
     "resize",
+    "sharpen",
     "to_bgr",
+    "to_grayscale",
     "to_rgb",
+    "upscale",
 ]

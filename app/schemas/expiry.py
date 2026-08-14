@@ -39,6 +39,18 @@ class ExpiryExtractResponse(BaseModel):
     unreadable_count: int = 0
     latency_ms: Optional[float] = None
 
+    #: The single read a store manager should act on — the most decisive dated
+    #: candidate (expired > near-expiry > valid), not merely the most confident.
+    best: Optional[ExpiryExtraction] = None
+    raw_text: Optional[str] = Field(
+        default=None, description="Everything OCR read, newline-joined, for audit"
+    )
+    variant_used: Optional[str] = Field(
+        default=None, description="Preprocessing variant that produced the winning date"
+    )
+    variants_tried: List[str] = Field(default_factory=list)
+    ocr_ms: Optional[float] = None
+
 
 class ExpiryAuditRead(ORMModel):
     id: int
