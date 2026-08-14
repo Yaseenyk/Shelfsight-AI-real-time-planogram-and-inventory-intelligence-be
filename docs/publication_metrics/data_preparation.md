@@ -121,6 +121,32 @@ that verification. Re-running the leakage measurement against the new partition
 yields **0.00% same-class near-duplicate overlap** for both the validation and
 test splits, reduced from 30.2%.
 
+### Measured effect on the reported metric
+
+Retraining the identical architecture, hyper-parameters and seed on the
+repartitioned corpus isolates the contribution of leakage to the previously
+reported figure:
+
+| | Random image-level split | Cluster split |
+|---|---|---|
+| Same-class near-duplicates in test | 30.2% | **0.00%** |
+| Held-out top-1 accuracy | 0.9606 | **0.9520** |
+| Held-out macro F1 | 0.9543 | **0.9440** |
+
+The 0.86-point drop in top-1 is not a regression — it is the portion of the
+original figure attributable to the model recognising training images it had
+already seen. Only the second column is a generalisation estimate.
+
+The per-class breakdown is more informative than the headline. Under the clean
+partition, `ripening` precision falls to 0.843 against 0.952 and 0.989 for
+`fresh` and `spoiled`, exposing it as the limiting class. The contaminated
+partition masked this: augmented siblings of `ripening` training images appeared
+in its test set, and the class appeared to perform comparably to the others.
+Partition integrity therefore affects not only the magnitude of the reported
+metric but which conclusions can be drawn from it.
+
+### Cross-class matches are not leakage
+
 Sixty cross-class matches within the 5-bit radius remain and are *not* leakage.
 dHash operates on 9×8 luminance gradients and is invariant to colour, so a fresh
 and a spoiled specimen photographed in the same pose and framing yield nearly
