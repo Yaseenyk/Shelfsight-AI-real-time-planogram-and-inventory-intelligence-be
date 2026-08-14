@@ -51,6 +51,12 @@ class DiscrepancyItem(BaseModel):
 class InventoryScanResponse(BaseModel):
     session_uid: str
     shelf_id: Optional[str] = None
+    #: Products the detector localised in the frame, before SKU resolution.
+    #: With a single-class detector this is large while total_detected is 0:
+    #: the shelf is full, but nothing can be attributed to a catalogue entry.
+    #: Reporting only the resolved figure describes a full shelf as empty.
+    objects_detected: int = 0
+    unresolved_detections: int = 0
     total_detected: int
     total_system: int
     matched_skus: int

@@ -131,7 +131,15 @@ async def scan_from_image(
     )
     latency_ms = (time.perf_counter() - started) * 1000.0
     complete_session(db, session, total_latency_ms=latency_ms, detector_version=detector.version)
-    return _to_response(session.session_uid, shelf_id, logs, discrepancies, latency_ms)
+    return _to_response(
+        session.session_uid,
+        shelf_id,
+        logs,
+        discrepancies,
+        latency_ms,
+        objects_detected=len(result.detections),
+        unresolved=sum(1 for d in detections if not getattr(d, 'sku', None)),
+    )
 
 
 @router.get("/summary", response_model=InventorySummary)
@@ -172,8 +180,12 @@ def _to_response(
     logs: List[InventoryLog],
     discrepancies: List,
     latency_ms: float,
+    objects_detected: int = 0,
+    unresolved: int = 0,
 ) -> InventoryScanResponse:
     return InventoryScanResponse(
+        objects_detected=objects_detected,
+        unresolved_detections=unresolved,
         session_uid=session_uid,
         shelf_id=shelf_id,
         total_detected=sum(row.detected_count for row in logs),

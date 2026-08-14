@@ -155,6 +155,49 @@ accuracy — they constitute a harder discrimination problem, not an easier one.
 Restricting the leakage criterion to same-class matches is therefore the correct
 measurement; the pooled figure over-reports contamination.
 
+## Consequence of the single-class detector
+
+SKU-110K annotates a single class, `product`. Adopting it fixed the leakage but
+changes what the system can claim, and the boundary should be stated rather
+than discovered.
+
+Measured on a held-out SKU-110K shelf photograph through the running API:
+
+| Quantity | Value |
+|---|---|
+| Products localised | **138** |
+| Resolved to a catalogue SKU | **0** |
+| Unresolved | 138 |
+
+Detection is excellent — 138 products on a densely packed shelf, consistent with
+the corpus average of roughly 140 per image. What the detector cannot supply is
+*identity*: every box carries the label `product`, and the class-mapping stage
+has no rule from that to a specific catalogue entry.
+
+The pipeline therefore supports:
+
+- **product presence, count and position** — the detector output is sufficient;
+- **planogram compliance by position** — slots are matched geometrically, by IoU
+  and centre distance, so identity is not required to determine that a slot is
+  occupied or empty;
+
+and does **not** support:
+
+- **inventory reconciliation by SKU** — attributing counts to specific products
+  requires identity the detector does not produce. A shelf holding 138 items
+  reconciles to `total_detected: 0`, and every catalogue entry is reported as
+  phantom.
+
+The API reports both figures (`objects_detected` alongside `total_detected`)
+precisely so this state is legible: a full shelf must not be described as empty
+merely because nothing could be named.
+
+Restoring SKU-level reconciliation requires either a multi-class detector
+trained on the target catalogue, or a second stage that classifies each detected
+crop against it. The latter composes with the current detector and is the
+cheaper path, since the localisation quality reported above is retained
+unchanged.
+
 ## Reproducibility
 
 | Stage | Tool |
