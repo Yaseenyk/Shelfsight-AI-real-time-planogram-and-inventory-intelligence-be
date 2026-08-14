@@ -69,6 +69,22 @@ Projects\
 
 ---
 
+## The AI models are supplied separately
+
+The trained models are large files that are not stored with the code. They come
+as a separate download or folder alongside this project.
+
+**Copy the supplied `models\weights` folder into `be\models\weights\`** before
+you start, so that folder contains files ending in `.pt` and `.onnx`.
+
+`START.bat` checks for them and warns you if they are missing. Take that warning
+seriously: without them the dashboard still opens and looks completely normal,
+but photo analysis quietly produces nonsense — the system falls back to a
+general-purpose model that recognises things like people and cars rather than
+shop products.
+
+---
+
 ## If something goes wrong
 
 **"Python was not found"**
