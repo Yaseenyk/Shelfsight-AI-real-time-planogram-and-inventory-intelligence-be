@@ -112,3 +112,16 @@ reset:  ## DESTRUCTIVE: delete containers, volumes, database and weights
 	$(COMPOSE) down -v
 	rm -f shelfsight.db shelfsight.db-wal shelfsight.db-shm
 	@echo "Reset complete. Run 'make run' for a clean system."
+
+cluster-split:  ## Re-split a classification dataset by perceptual-hash cluster (SRC=, OUT=)
+	$(VENV_PY) -m tools.cluster_split --src $(or $(SRC),data/freshness) --out $(or $(OUT),data/freshness_clean) --val-split 0.15 --test-split 0.15
+
+subset-sku110k:  ## Build a CPU-trainable SKU-110K subset preserving official splits (ROOT=)
+	$(VENV_PY) -m tools.subset_sku110k --root $(ROOT) --train 2000 --val 400
+
+package:  ## Build the client handover archive (weights + launcher + docs)
+	$(VENV_PY) -m tools.package_handover --out dist/shelfsight-handover.zip
+
+licenses:  ## Regenerate the third-party licence inventory
+	$(VENV_PY) -m piplicenses --format=markdown --with-urls --order=license > THIRD_PARTY_LICENSES.md
+	@echo "wrote THIRD_PARTY_LICENSES.md"

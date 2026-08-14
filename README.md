@@ -8,15 +8,30 @@ Frontend repo: [Shelfsight-AI-real-time-planogram-and-inventory-intelligence](ht
 
 ---
 
-## Quickstart — Docker (recommended)
+## Quickstart — Windows, no Docker (what to give a client)
 
-Clone both repositories side by side, then run one command:
+Double-click **`START.bat`**. It checks prerequisites, builds the virtualenv,
+installs both dependency sets, seeds the database, starts the API and the
+dashboard, waits until each answers, and opens the browser. `STOP.bat` stops it.
+First run takes 15–25 minutes; subsequent runs about 30 seconds.
+
+**[`READ_ME_FIRST.md`](READ_ME_FIRST.md)** is written for a non-technical
+recipient and is the document to hand over.
+
+> Trained weights are gitignored, so a clone has none — and Ultralytics silently
+> substitutes the 80-class COCO baseline, which starts cleanly and detects people
+> and cars instead of shelf products. `START.bat` now checks for this. Build a
+> complete bundle with `python -m tools.package_handover`.
+
+Both repositories must sit side by side:
 
 ```
 Projects/
 ├── be/   <- this repo
 └── fe/   <- frontend
 ```
+
+## Quickstart — Docker
 
 ```bash
 cd be
@@ -234,12 +249,54 @@ counts and the split.
 > identifiers and `list` prints their URLs to verify. `merge` works on any
 > folders you downloaded by hand and needs no key at all.
 
+### Partition integrity — read before trusting any metric
+
+`merge` deduplicates by **exact content hash** and then shuffles at image level.
+That is not sufficient, and both training corpora were affected:
+
+- The original detection set was 603 frames decoded from three videos of one
+  shelf, split per frame. Every test frame lay within seven frames of a training
+  frame. It scored **mAP@0.5:0.95 = 0.980** by memorisation.
+- The freshness sources ship **pre-augmented** — rotations of one photograph are
+  separate files with different bytes, so they survive hash dedup and scatter
+  across splits. **30.2%** of the test set were near-duplicates of training
+  images.
+
+Use `cluster_split` for any classification corpus. It links images within a
+perceptual-hash radius, takes connected components, and assigns whole components
+to one split, so a photograph and its augmented descendants can never separate:
+
+```bash
+python -m tools.cluster_split --src data/freshness --out data/freshness_clean \
+    --val-split 0.15 --test-split 0.15 --threshold 5
+```
+
+For detection, `subset_sku110k` builds a CPU-trainable subset of SKU-110K that
+preserves the published split boundaries and keeps the official test split whole
+so results stay comparable with published baselines:
+
+```bash
+python -m tools.subset_sku110k --root <sku110k-root> --train 2000 --val 400
+```
+
+Measured effect on the freshness corpus: same-class near-duplicate overlap fell
+from **30.2% to 0.00%**, and held-out top-1 from 0.9606 to **0.9520** — that
+0.86-point drop is the leakage, not a regression. Full detail and method in
+[`docs/publication_metrics/data_preparation.md`](docs/publication_metrics/data_preparation.md).
+
 ### Model export (Phase 4)
 
 ```bash
-python models/export_pipeline.py export --format onnx --benchmark
-python models/export_pipeline.py export --format torchscript --target freshness
+python -m models.export_pipeline export --format onnx --benchmark \
+    --detector-weights models/weights/<detector>.pt \
+    --freshness-weights models/weights/<freshness>.pt
 ```
+
+**Always name the weights.** Without those flags the export uses the configured
+defaults, which are the untrained COCO baseline and whichever freshness
+checkpoint happens to be installed — it would overwrite the runtime ONNX with
+models the reported metrics do not describe, silently. `export_manifest.json`
+records the resolved paths so this is auditable afterwards.
 
 Every export is reloaded and re-run, and ONNX output is compared against the
 PyTorch reference — an export that silently produces wrong numbers is worse than
