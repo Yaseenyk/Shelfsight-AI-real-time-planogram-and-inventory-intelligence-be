@@ -1,0 +1,7 @@
+path: D:/Projects/be/models/datasets/sku110k_subset
+train: D:/Projects/be/models/datasets/sku110k_subset/train.txt
+val: D:/Projects/be/models/datasets/sku110k_subset/val.txt
+test: D:/Projects/be/models/datasets/sku110k_subset/test.txt
+nc: 1
+names:
+- product

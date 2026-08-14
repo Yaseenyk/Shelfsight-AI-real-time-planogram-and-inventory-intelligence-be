@@ -1,0 +1,25 @@
+{
+  "source": "D:\\kagglehub-cache\\datasets\\pranshu8694\\sku110dataset-resized640\\versions\\6\\v1.0\\v1.0",
+  "dataset": "SKU-110K (resized 640)",
+  "split_policy": "official train/val/test preserved; subset sampled by uniform stride within the training split only",
+  "splits": {
+    "train": {
+      "available": 8185,
+      "selected": 2000,
+      "missing_labels": 12,
+      "empty_labels": 0
+    },
+    "val": {
+      "available": 584,
+      "selected": 400,
+      "missing_labels": 3,
+      "empty_labels": 0
+    },
+    "test": {
+      "available": 2920,
+      "selected": 2920,
+      "missing_labels": 21,
+      "empty_labels": 0
+    }
+  }
+}
