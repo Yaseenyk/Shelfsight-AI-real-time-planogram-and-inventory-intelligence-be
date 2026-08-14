@@ -176,16 +176,92 @@ def _verify_onnx(path: Path, dummy: Any, reference: Any) -> Optional[float]:
     outputs = session.run(None, {"input": dummy.numpy()})
     drift = float(np.abs(reference.numpy() - outputs[0]).max())
     if drift > 1e-3:
-        logger.error(
-            "ONNX output diverges from PyTorch by %.2e — do not ship this export", drift
-        )
+        logger.error("ONNX output diverges from PyTorch by %.2e — do not ship this export", drift)
     return drift
 
 
-def benchmark_runtimes(
-    onnx_path: Optional[Path] = None, runs: int = 20
+def benchmark_detector_runtimes(
+    onnx_path: Optional[Path] = None, weights: Optional[Path] = None, runs: int = 15
 ) -> Dict[str, Any]:
-    """Measure eager-PyTorch vs ONNX Runtime latency — the reason to export at all."""
+    """Measure YOLOv8 eager-PyTorch vs ONNX Runtime latency on one frame.
+
+    Both paths are fed the *same* pre-letterboxed tensor so the comparison is of
+    the inference engines, not of two different preprocessing implementations —
+    Ultralytics' Python preprocessing would otherwise be counted against PyTorch
+    only, inflating the speed-up.
+    """
+    onnx_file = Path(onnx_path) if onnx_path else None
+    if onnx_file is None or not onnx_file.exists():
+        return {}
+
+    try:
+        import time  # noqa: PLC0415
+
+        import numpy as np  # noqa: PLC0415
+        import onnxruntime  # noqa: PLC0415
+        import torch  # noqa: PLC0415
+        from ultralytics import YOLO  # noqa: PLC0415
+    except ImportError:
+        return {}
+
+    weights_path = Path(weights or settings.DETECTION_WEIGHTS)
+    if not weights_path.exists():
+        return {}
+
+    size = settings.DETECTION_IMG_SIZE
+    session = onnxruntime.InferenceSession(str(onnx_file), providers=["CPUExecutionProvider"])
+    input_meta = session.get_inputs()[0]
+    # The exported graph pins its spatial dims; honour them rather than assume.
+    shape = [d if isinstance(d, int) else 1 for d in input_meta.shape]
+    if len(shape) == 4:
+        size = shape[2]
+    dummy = torch.randn(1, 3, size, size)
+
+    model = YOLO(str(weights_path))
+    torch_module = model.model.float().eval()
+
+    with torch.no_grad():
+        for _ in range(3):
+            torch_module(dummy)
+        started = time.perf_counter()
+        for _ in range(runs):
+            torch_module(dummy)
+        torch_ms = (time.perf_counter() - started) * 1000.0 / runs
+
+    payload = {input_meta.name: dummy.numpy().astype(np.float32)}
+    for _ in range(3):
+        session.run(None, payload)
+    started = time.perf_counter()
+    for _ in range(runs):
+        session.run(None, payload)
+    onnx_ms = (time.perf_counter() - started) * 1000.0 / runs
+
+    result = {
+        "runs": runs,
+        "imgsz": size,
+        "pytorch_ms": round(torch_ms, 3),
+        "onnx_ms": round(onnx_ms, 3),
+        "speedup": round(torch_ms / onnx_ms, 2) if onnx_ms else None,
+    }
+    logger.info(
+        "Detector CPU latency: PyTorch %.1f ms vs ONNX %.1f ms (%.2fx)",
+        torch_ms,
+        onnx_ms,
+        result["speedup"] or 0.0,
+    )
+    return result
+
+
+def benchmark_runtimes(
+    onnx_path: Optional[Path] = None, weights: Optional[Path] = None, runs: int = 20
+) -> Dict[str, Any]:
+    """Measure eager-PyTorch vs ONNX Runtime latency — the reason to export at all.
+
+    `weights` must name the same checkpoint the ONNX file was exported from.
+    Defaulting the PyTorch side to the configured weights while the ONNX side
+    came from a different checkpoint would compare two different models and
+    report the difference as a runtime speed-up.
+    """
     if onnx_path is None or not Path(onnx_path).exists():
         return {}
 
@@ -200,7 +276,7 @@ def benchmark_runtimes(
 
     from app.services.freshness import FreshnessService  # noqa: PLC0415
 
-    service = FreshnessService()
+    service = FreshnessService(weights=weights) if weights else FreshnessService()
     if not service.load():
         return {}
 
@@ -217,9 +293,7 @@ def benchmark_runtimes(
             model(dummy)
         torch_ms = (time.perf_counter() - started) * 1000.0 / runs
 
-    session = onnxruntime.InferenceSession(
-        str(onnx_path), providers=["CPUExecutionProvider"]
-    )
+    session = onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     payload = {"input": dummy.numpy().astype(np.float32)}
     for _ in range(3):
         session.run(None, payload)
@@ -289,15 +363,31 @@ def cmd_export(args: argparse.Namespace) -> int:
         "artifacts": {},
     }
 
+    detector_weights = Path(args.detector_weights) if args.detector_weights else None
+    freshness_weights = Path(args.freshness_weights) if args.freshness_weights else None
+    results["weights"] = {
+        "detector": str(detector_weights or settings.DETECTION_WEIGHTS),
+        "freshness": str(freshness_weights or settings.FRESHNESS_WEIGHTS),
+    }
+
     if args.target in ("all", "detector"):
-        path = export_detector(fmt=args.format, opset=args.opset)
+        # Export at the resolution the model was trained and evaluated at;
+        # a latency figure measured at a different imgsz than the mAP figure
+        # cannot be reported in the same table without a caveat.
+        path = export_detector(
+            weights=detector_weights, fmt=args.format, opset=args.opset, imgsz=args.imgsz
+        )
         results["artifacts"]["detector"] = str(path) if path else None
+        if path and args.format == "onnx" and args.benchmark:
+            detector_latency = benchmark_detector_runtimes(path, weights=detector_weights)
+            if detector_latency:
+                results.setdefault("components", {})["YOLOv8n detector"] = detector_latency
 
     if args.target in ("all", "freshness"):
-        path = export_freshness(fmt=args.format, opset=args.opset)
+        path = export_freshness(weights=freshness_weights, fmt=args.format, opset=args.opset)
         results["artifacts"]["freshness"] = str(path) if path else None
         if path and args.format == "onnx" and args.benchmark:
-            results["latency"] = benchmark_runtimes(path)
+            results["latency"] = benchmark_runtimes(path, weights=freshness_weights)
 
     manifest = write_export_manifest(results)
     print(json.dumps({**results, "manifest": str(manifest)}, indent=2))
@@ -320,13 +410,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    def add_export_args(parser_: argparse.ArgumentParser) -> None:
+        parser_.add_argument("--format", choices=["onnx", "torchscript"], default="onnx")
+        parser_.add_argument("--target", choices=["all", "detector", "freshness"], default="all")
+        parser_.add_argument("--opset", type=int, default=12)
+        parser_.add_argument(
+            "--imgsz", type=int, default=None, help="detector export size (match training)"
+        )
+        parser_.add_argument(
+            "--benchmark", action="store_true", help="measure PyTorch vs ONNX CPU latency"
+        )
+        # Without these the export silently uses the configured defaults, which
+        # are the COCO baseline and whichever freshness checkpoint happens to be
+        # installed -- not necessarily the models the reported metrics describe.
+        parser_.add_argument(
+            "--detector-weights",
+            default=None,
+            help="detector checkpoint to export (default: settings.DETECTION_WEIGHTS)",
+        )
+        parser_.add_argument(
+            "--freshness-weights",
+            default=None,
+            help="freshness checkpoint to export (default: settings.FRESHNESS_WEIGHTS)",
+        )
+
     export = sub.add_parser("export", help="export weights to ONNX/TorchScript")
-    export.add_argument("--format", choices=["onnx", "torchscript"], default="onnx")
-    export.add_argument("--target", choices=["all", "detector", "freshness"], default="all")
-    export.add_argument("--opset", type=int, default=12)
-    export.add_argument(
-        "--benchmark", action="store_true", help="measure PyTorch vs ONNX CPU latency"
-    )
+    add_export_args(export)
     export.set_defaults(func=cmd_export)
 
     metrics = sub.add_parser("metrics", help="run benchmarks and publish figures")
@@ -335,10 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
     metrics.set_defaults(func=cmd_metrics)
 
     every = sub.add_parser("all", help="export, then publish metrics")
-    every.add_argument("--format", choices=["onnx", "torchscript"], default="onnx")
-    every.add_argument("--target", choices=["all", "detector", "freshness"], default="all")
-    every.add_argument("--opset", type=int, default=12)
-    every.add_argument("--benchmark", action="store_true")
+    add_export_args(every)
     every.add_argument("--suites", default="all")
     every.add_argument("--run-id", default=None)
     every.set_defaults(func=cmd_all)
