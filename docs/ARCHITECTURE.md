@@ -330,6 +330,41 @@ Figures are emitted at 300 dpi PNG **and** vector PDF. Confusion matrices use a
 single-hue sequential ramp with in-cell values, so they stay readable in greyscale print
 and under colour-vision deficiency.
 
+### 6a. Partition integrity — a verified stage, not an assumption
+
+Two corpora produced held-out figures that measured memorisation rather than
+generalisation. Neither failure raised anything: the numbers were simply too
+good, which is the only symptom this class of bug has.
+
+| Corpus | Fault | Evidence | Remedy |
+| --- | --- | --- | --- |
+| Detection (video-derived) | partitioned per *frame*, from three videos of one shelf | all 60 test frames within 7 frames of a training frame; 37 immediately adjacent; mAP@0.5:0.95 **0.980** | replaced with a SKU-110K subset, official boundaries preserved (`tools/subset_sku110k.py`) |
+| Freshness | exact-hash dedup then image-level shuffle, over a **pre-augmented** source | 30.2% of test images within 5 dHash bits of a training image; 177 exact perceptual duplicates survived byte-level dedup | connected-component partitioning (`tools/cluster_split.py`) |
+
+The design rule this yields: **the unit of partitioning must be the independent
+observation, not the file.** For video that unit is the source clip; for an
+augmented dataset it is the base photograph and all of its derivatives. Exact
+content hashing cannot recover either, because both produce files that differ
+byte-for-byte while depicting the same thing.
+
+`cluster_split` links images within a Hamming radius of 5 over 64-bit dHash,
+takes connected components of that graph, and assigns whole components to a
+single split. dHash is chosen for being stable under re-encoding and rescaling
+while remaining sensitive to content; it is deliberately colour-blind, so
+same-pose specimens of different ripeness hash alike — those cross-class
+neighbours are *not* leakage, and the leakage criterion is restricted to
+same-class matches accordingly.
+
+Verification gates training rather than following it. Same-class overlap fell
+from 30.2% to **0.00%**, and held-out top-1 from 0.9606 to **0.9520**; that
+0.86-point difference is the leakage. Full method and figures in
+[`docs/publication_metrics/data_preparation.md`](publication_metrics/data_preparation.md).
+
+> The detector is single-class (`product`). The pipeline therefore verifies
+> presence, count and position, **not** which SKU occupies a slot. Compliance
+> matching consumes `class_map` resolution for identity, so a multi-class
+> detector remains a drop-in improvement rather than a rewrite.
+
 ## 7. Local LLM insight layer (Phase 3)
 
 ```
