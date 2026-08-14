@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shelfsight.ai/schemas/planogram-1.0.0.json",
+  "title": "ShelfSight Planogram Matrix",
+  "description": "Canonical multi-shelf, multi-row planogram definition. All geometry is expressed in normalised image coordinates (0..1, origin top-left) so a single layout is reusable across camera resolutions and mount positions.",
+  "type": "object",
+  "required": ["planogram_id", "name", "shelves"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "default": "1.0.0",
+      "description": "Version of THIS schema the document targets."
+    },
+    "planogram_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_\\-]{3,128}$",
+      "description": "Stable unique identifier, e.g. PLN-AISLE3-BAY2."
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "default": "1.0.0",
+      "description": "Semantic version of the layout content itself."
+    },
+    "store_id": { "type": ["string", "null"] },
+    "aisle": { "type": ["string", "null"] },
+    "bay": { "type": ["string", "null"] },
+    "units": {
+      "type": "string",
+      "enum": ["normalized"],
+      "default": "normalized",
+      "description": "Only normalised coordinates are supported in v1."
+    },
+    "tolerances": { "$ref": "#/$defs/tolerances" },
+    "shelves": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/shelf" }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form provenance: author, capture rig, dataset split, notes.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "object",
+      "description": "Axis-aligned box in normalised xyxy. Requires x2 > x1 and y2 > y1.",
+      "required": ["x1", "y1", "x2", "y2"],
+      "additionalProperties": false,
+      "properties": {
+        "x1": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y1": { "type": "number", "minimum": 0, "maximum": 1 },
+        "x2": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y2": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "tolerances": {
+      "type": "object",
+      "description": "Thresholds applied by the spatial compliance engine.",
+      "additionalProperties": false,
+      "properties": {
+        "iou_threshold": {
+          "type": "number", "minimum": 0, "maximum": 1, "default": 0.5,
+          "description": "Minimum IoU for a detection to satisfy a slot."
+        },
+        "center_distance_threshold": {
+          "type": "number", "minimum": 0, "maximum": 1.5, "default": 0.08,
+          "description": "Euclidean centre-distance rescue, in normalised units."
+        },
+        "row_band_tolerance": {
+          "type": "number", "minimum": 0, "maximum": 0.5, "default": 0.05,
+          "description": "Vertical band used to cluster detections into rows."
+        },
+        "min_detection_confidence": {
+          "type": "number", "minimum": 0, "maximum": 1, "default": 0.35
+        }
+      }
+    },
+    "slot": {
+      "type": "object",
+      "description": "One expected product position (a facing block) within a row.",
+      "required": ["slot_id", "position", "sku", "bbox"],
+      "additionalProperties": false,
+      "properties": {
+        "slot_id": { "type": "string", "minLength": 1 },
+        "position": {
+          "type": "integer", "minimum": 1,
+          "description": "1-indexed left-to-right ordinal within the row."
+        },
+        "sku": { "type": "string", "minLength": 1 },
+        "expected_facings": { "type": "integer", "minimum": 1, "default": 1 },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "orientation": {
+          "type": "string",
+          "enum": ["front", "left", "right", "top"],
+          "default": "front"
+        },
+        "min_confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "is_mandatory": {
+          "type": "boolean", "default": true,
+          "description": "False marks a promotional/optional slot excluded from hard compliance."
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "required": ["row_id", "index", "slots"],
+      "additionalProperties": false,
+      "properties": {
+        "row_id": { "type": "string", "minLength": 1 },
+        "index": {
+          "type": "integer", "minimum": 1,
+          "description": "1-indexed top-to-bottom row ordinal within the shelf."
+        },
+        "slots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/slot" } }
+      }
+    },
+    "shelf": {
+      "type": "object",
+      "required": ["shelf_id", "level", "y_range", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "shelf_id": { "type": "string", "minLength": 1 },
+        "level": {
+          "type": "integer", "minimum": 1,
+          "description": "1 = top shelf, increasing downward."
+        },
+        "y_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "description": "[y_low, y_high] normalised band used to assign detections to this shelf."
+        },
+        "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/row" } }
+      }
+    }
+  }
+}

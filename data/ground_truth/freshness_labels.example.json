@@ -1,0 +1,15 @@
+{
+  "description": "Freshness validation predictions vs. human labels. `models/train_freshness.py` writes a file in this exact shape to evaluation/reports/freshness_val_predictions.json after each epoch.",
+  "samples": [
+    { "id": "f-001", "truth_label": "fresh", "predicted_label": "fresh" },
+    { "id": "f-002", "truth_label": "fresh", "predicted_label": "fresh" },
+    { "id": "f-003", "truth_label": "fresh", "predicted_label": "ripening" },
+    { "id": "f-004", "truth_label": "ripening", "predicted_label": "ripening" },
+    { "id": "f-005", "truth_label": "ripening", "predicted_label": "ripening" },
+    { "id": "f-006", "truth_label": "ripening", "predicted_label": "spoiled" },
+    { "id": "f-007", "truth_label": "spoiled", "predicted_label": "spoiled" },
+    { "id": "f-008", "truth_label": "spoiled", "predicted_label": "spoiled" },
+    { "id": "f-009", "truth_label": "spoiled", "predicted_label": "ripening" },
+    { "id": "f-010", "truth_label": "fresh", "predicted_label": "fresh" }
+  ]
+}

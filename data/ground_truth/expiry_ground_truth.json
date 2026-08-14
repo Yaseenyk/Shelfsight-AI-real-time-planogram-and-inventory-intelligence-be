@@ -1,0 +1,48 @@
+{
+  "description": "OCR expiry ground truth. `ocr_text` is what the engine read (or will read); `truth_text` and `truth_date` are the human labels used for CER/WER and date-parsing precision.",
+  "reference_date": "2026-08-14",
+  "samples": [
+    {
+      "id": "exp-001",
+      "image": "data/samples/expiry/exp-001.jpg",
+      "ocr_text": "EXP 12/09/2026",
+      "truth_text": "EXP 12/09/2026",
+      "truth_date": "2026-09-12"
+    },
+    {
+      "id": "exp-002",
+      "image": "data/samples/expiry/exp-002.jpg",
+      "ocr_text": "BEST BEFORE: 3O NOV 2O26",
+      "truth_text": "BEST BEFORE: 30 NOV 2026",
+      "truth_date": "2026-11-30"
+    },
+    {
+      "id": "exp-003",
+      "image": "data/samples/expiry/exp-003.jpg",
+      "ocr_text": "USE BY 2026-08-10",
+      "truth_text": "USE BY 2026-08-10",
+      "truth_date": "2026-08-10"
+    },
+    {
+      "id": "exp-004",
+      "image": "data/samples/expiry/exp-004.jpg",
+      "ocr_text": "BB 20260818",
+      "truth_text": "BB 20260818",
+      "truth_date": "2026-08-18"
+    },
+    {
+      "id": "exp-005",
+      "image": "data/samples/expiry/exp-005.jpg",
+      "ocr_text": "EXP. Sep 05 2O26",
+      "truth_text": "EXP. Sep 05 2026",
+      "truth_date": "2026-09-05"
+    },
+    {
+      "id": "exp-006",
+      "image": "data/samples/expiry/exp-006.jpg",
+      "ocr_text": "smudged",
+      "truth_text": "",
+      "truth_date": null
+    }
+  ]
+}

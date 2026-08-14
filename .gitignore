@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Model weights & datasets (never commit binaries)
+models/weights/*
+!models/weights/.gitkeep
+models/datasets/**/images/
+models/datasets/**/labels/
+runs/
+
+# Runtime data
+data/uploads/
+data/samples/
+data/crops/
+
+# Benchmark frames — datasets stay out of the repo (keep the README)
+data/test_images/**
+!data/test_images/README.md
+
+# Evaluation output
+evaluation/reports/*
+!evaluation/reports/.gitkeep
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
