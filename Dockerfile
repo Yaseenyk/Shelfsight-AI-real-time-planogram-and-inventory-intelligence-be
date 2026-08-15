@@ -34,7 +34,7 @@ FROM python:3.10-slim AS runtime
 # "libGL.so.1: cannot open shared object file", which looks like a Python
 # problem and is not. glib/gomp are needed by opencv and torch respectively.
 RUN apt-get update && apt-get install --no-install-recommends -y \
-        libgl1-mesa-glx \
+        libgl1 \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
