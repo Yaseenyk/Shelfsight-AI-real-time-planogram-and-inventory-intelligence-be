@@ -22,6 +22,14 @@ data/test_images/
 data/test_freshness/
 data/test_expiry/
 data/freshness/
+# Cluster-repartitioned corpus: ~27k images, ~1.9 GB. Omitting it sent the
+# whole thing as build context on every build, which is what filled the
+# system drive. Training data never belongs in a runtime image.
+data/freshness_clean/
+data/detection/
+dist/
+docs/publication_metrics/
+kagglehub-cache/
 
 # Weights are mounted, never baked in: a 6 MB detector is fine but a fine-tuned
 # ResNet50 would bloat every image layer.
