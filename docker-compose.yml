@@ -33,8 +33,19 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       SEED_ON_STARTUP: "true"
       DETECTION_DEVICE: cpu
+      # Fail loudly on a missing checkpoint rather than substituting the
+      # COCO baseline: a container that refuses to start is far easier to
+      # diagnose than one that starts and quietly detects the wrong things.
+      DETECTION_ALLOW_DOWNLOAD: "false"
     volumes:
       - shelfsight-runtime:/app/runtime
+      # Trained weights come from the host, read-only. Without this the
+      # runtime volume starts empty, Ultralytics downloads the COCO baseline
+      # in place of the configured file, and saves it under that filename --
+      # so the container reports the right model name while serving a
+      # detector that recognises people and cars. This mount is more specific
+      # than the volume above, so it wins.
+      - ./models/weights:/app/runtime/weights:ro
       # Planograms and ground truth are editable inputs, not runtime state —
       # bind-mounted so the client can drop in a new layout without rebuilding.
       - ./data/planograms:/app/data/planograms:ro
