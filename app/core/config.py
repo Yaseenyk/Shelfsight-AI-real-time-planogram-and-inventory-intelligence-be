@@ -8,12 +8,23 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+#: A list that may arrive from the environment as "a,b,c" rather than JSON.
+#:
+#: NoDecode is the load-bearing part. pydantic-settings decodes complex field
+#: types from env vars with json.loads *inside the source*, before any
+#: field_validator runs -- so a `mode="before"` validator that splits on
+#: commas never gets the chance, and startup dies with
+#: `error parsing value for field ... from source "EnvSettingsSource"`.
+#: NoDecode suppresses that decode and hands the raw string to the validator.
+CsvList = Annotated[List[str], NoDecode]
 
 
 class Settings(BaseSettings):
@@ -39,7 +50,7 @@ class Settings(BaseSettings):
     LOCALE: str = "en-IN"
 
     # --- CORS ------------------------------------------------------------
-    CORS_ORIGINS: List[str] = Field(
+    CORS_ORIGINS: CsvList = Field(
         default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
     )
 
@@ -92,17 +103,15 @@ class Settings(BaseSettings):
     FRESHNESS_WEIGHTS: Path = BASE_DIR / "models" / "weights" / "freshness_mobilenetv2_clean.pt"
     FRESHNESS_BACKBONE: str = "mobilenet_v2"  # "mobilenet_v2" | "resnet50"
     FRESHNESS_INPUT_SIZE: int = 224
-    FRESHNESS_CLASSES: List[str] = Field(
-        default_factory=lambda: ["fresh", "ripening", "spoiled"]
-    )
+    FRESHNESS_CLASSES: CsvList = Field(default_factory=lambda: ["fresh", "ripening", "spoiled"])
 
     # --- OCR expiry engine ------------------------------------------------
-    OCR_LANGUAGES: List[str] = Field(default_factory=lambda: ["en"])
+    OCR_LANGUAGES: CsvList = Field(default_factory=lambda: ["en"])
     OCR_GPU: bool = False
     OCR_MIN_CONFIDENCE: float = 0.30
     #: Preprocessing variants tried in order until one yields a parseable date.
     #: See app/services/ocr_expiry.py for what each does and why.
-    OCR_VARIANTS: List[str] = Field(
+    OCR_VARIANTS: CsvList = Field(
         default_factory=lambda: ["raw", "clahe_sharpen", "otsu", "adaptive_close", "otsu_invert"]
     )
     #: Upscale crops shorter than this before OCR — EasyOCR's recogniser drops
@@ -147,10 +156,27 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _split_csv(cls, value: object) -> object:
-        """Allow `A,B,C` style env values in addition to JSON arrays."""
-        if isinstance(value, str) and not value.strip().startswith("["):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        """Accept `A,B,C` or a JSON array from the environment.
+
+        These fields are annotated NoDecode, so the settings source hands the
+        raw string straight here and *both* forms must be handled: previously
+        the JSON case relied on the source having decoded it already, which
+        NoDecode is precisely what stops.
+        """
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            import json  # noqa: PLC0415 - only needed on this branch
+
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                # Fall through to CSV: a malformed array is more likely a
+                # bracketed CSV than a JSON document, and a clear validation
+                # error beats a decode traceback out of the settings source.
+                pass
+        return [item.strip() for item in text.split(",") if item.strip()]
 
     def ensure_directories(self) -> None:
         for path in (self.DATA_DIR, self.UPLOAD_DIR, self.PLANOGRAM_DIR, self.REPORTS_DIR):
