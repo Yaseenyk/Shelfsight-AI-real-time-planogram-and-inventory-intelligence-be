@@ -26,6 +26,7 @@ import argparse
 import sys
 from datetime import date, timedelta
 from typing import Dict, List, Optional
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -33,8 +34,10 @@ from sqlalchemy.orm import Session
 from app.core.logging import configure_logging, get_logger
 from app.db.base import utcnow
 from app.db.session import SessionLocal
-from app.models.enums import RestockStatus, UserRole
+from app.models.enums import DiscrepancyType, RestockStatus, ScanStatus, Severity, UserRole
+from app.models.inventory import InventoryLog
 from app.models.product import Product
+from app.models.scan import ScanSession
 from app.models.shelf import Batch, RestockTask, Shelf
 from app.models.user import User
 from app.services import shelf_manager, stock
@@ -96,6 +99,70 @@ def reset(db: Session) -> int:
         db.delete(batch)
     db.commit()
     return len(shelves)
+
+
+def seed_shelf_check_alerts(db: Session, products: Dict[str, Product]) -> int:
+    """Give the vision dashboard something to show before anyone uploads a photo.
+
+    The shelf-check screen is driven by inventory logs, which only exist once a
+    frame has been analysed. On a freshly reset system it therefore reads
+    "everything looks good" -- true, but it demonstrates nothing, and a reviewer
+    cannot tell a healthy shop from an empty database.
+
+    These rows describe the same shop the shelves do: a few products the stock
+    record claims are present and the camera did not find.
+    """
+    if db.execute(select(InventoryLog)).first():
+        return 0
+
+    session = ScanSession(
+        session_uid=f"demo-{uuid4().hex[:12]}",
+        shelf_id="DEMO-AISLE1",
+        store_id="DEMO-STORE",
+        status=ScanStatus.COMPLETED,
+    )
+    db.add(session)
+    db.flush()
+
+    #: (sku index, what the system thinks, what the camera saw)
+    SITUATIONS = [
+        (0, 18, 0),  # phantom: stock record says 18, shelf is bare
+        (1, 12, 4),  # running low
+        (2, 9, 0),  # phantom
+        (3, 10, 14),  # more on the shelf than recorded
+    ]
+    skus = list(products)
+    created = 0
+    for sku_index, system_count, detected in SITUATIONS:
+        product = products[skus[sku_index % len(skus)]]
+        gap = detected - system_count
+        if detected == 0 and system_count > 0:
+            kind, severity = DiscrepancyType.PHANTOM, Severity.CRITICAL
+        elif detected < system_count:
+            kind, severity = DiscrepancyType.UNDERCOUNT, Severity.WARNING
+        elif detected > system_count:
+            kind, severity = DiscrepancyType.OVERCOUNT, Severity.WARNING
+        else:
+            kind, severity = DiscrepancyType.MATCH, Severity.INFO
+
+        db.add(
+            InventoryLog(
+                session_id=session.id,
+                product_id=product.id,
+                detected_count=detected,
+                system_count=system_count,
+                discrepancy=gap,
+                discrepancy_type=kind,
+                severity=severity,
+                shelf_id="DEMO-AISLE1",
+                # Value impact is derived by the service from unit price, so it
+                # is not stored here.
+                mean_confidence=0.82 if detected else None,
+            )
+        )
+        created += 1
+    db.flush()
+    return created
 
 
 def build(db: Session) -> Dict[str, int]:
@@ -223,10 +290,37 @@ def build(db: Session) -> Dict[str, int]:
         first.assigned_by_id = coordinator.id
         db.commit()
 
+    # Reserve stock, so the refill jobs have somewhere to be refilled from.
+    # Without it the story breaks in the middle: staff are told a shelf is low
+    # and the stockroom is empty, which demonstrates half a workflow.
+    reserve = 0
+    for index, row in enumerate(rows):
+        if index >= len(PLAN):
+            break
+        allocation = row.allocation
+        if allocation is None:
+            continue
+        # Two consignments per product with different dates, so the placement
+        # screen has a real FEFO choice to make rather than one obvious option.
+        for suffix, days, qty in (("R1", 21, 20), ("R2", 150, 40)):
+            _batch(
+                db,
+                allocation.product,
+                code=f"DEMO-{allocation.product.sku[-6:]}-{suffix}",
+                days_to_expiry=days,
+                quantity=qty,
+                receiver=coordinator,
+            )
+            reserve += 1
+
+    alerts = seed_shelf_check_alerts(db, products)
+    db.commit()
+
     return {
+        "alerts": alerts,
         "shelves": len(created_shelves),
         "rows": len(rows),
-        "batches": batches,
+        "batches": batches + reserve,
         "tasks": tasks,
     }
 
