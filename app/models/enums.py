@@ -48,3 +48,36 @@ class Severity(str, Enum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
+
+
+class UserRole(str, Enum):
+    """Who may do what.
+
+    Deliberately three, matching how the work actually divides on a shop floor:
+    the manager designs, the coordinator dispatches, the staff execute.
+    """
+
+    MANAGER = "manager"  # designs shelves, allocates rows, sets buffers
+    COORDINATOR = "coordinator"  # assigns restock work and confirms completion
+    STAFF = "staff"  # executes restocking, scans sales
+
+
+class RestockStatus(str, Enum):
+    OPEN = "open"  # threshold breached, nobody assigned yet
+    ASSIGNED = "assigned"  # coordinator gave it to a named person
+    DONE = "done"  # staff refilled it and marked it complete
+    CANCELLED = "cancelled"  # no longer needed (row re-allocated, or refilled anyway)
+
+
+class MovementType(str, Enum):
+    """Every change to what is physically on a shelf, so stock is auditable.
+
+    Shelf quantity is never edited in place: it is derived from these rows, which
+    means a disagreement between the system and the shelf can always be traced
+    to a specific event rather than guessed at.
+    """
+
+    PLACED = "placed"  # staff put units on the shelf
+    SOLD = "sold"  # scanned at checkout
+    REMOVED = "removed"  # pulled for damage, expiry or recall
+    CORRECTION = "correction"  # manual count adjustment after a physical audit

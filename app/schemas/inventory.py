@@ -62,6 +62,13 @@ class InventoryScanResponse(BaseModel):
     matched_skus: int
     discrepancies: List[DiscrepancyItem]
     phantom_count: int
+    #: The boxes themselves, so the dashboard can draw what the detector saw
+    #: over the photograph the user just took. Counts alone make the analysis
+    #: unfalsifiable to the person using it -- they are asked to trust a
+    #: number with nothing to check it against.
+    detections: List[Detection] = Field(default_factory=list)
+    image_width: int = 0
+    image_height: int = 0
     latency_ms: Optional[float] = None
     created_at: datetime
 

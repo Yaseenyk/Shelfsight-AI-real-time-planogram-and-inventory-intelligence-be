@@ -23,9 +23,7 @@ class PlanogramLayout(Base, TimestampMixin):
     __tablename__ = "planogram_layouts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    planogram_uid: Mapped[str] = mapped_column(
-        String(128), unique=True, index=True, nullable=False
-    )
+    planogram_uid: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
 

@@ -2,9 +2,21 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import expiry, freshness, insights, inventory, planogram
+from app.api.v1 import (
+    auth,
+    expiry,
+    freshness,
+    insights,
+    inventory,
+    operations,
+    planogram,
+    shelves,
+)
 
 api_router = APIRouter()
+api_router.include_router(auth.router)
+api_router.include_router(shelves.router)
+api_router.include_router(operations.router)
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(planogram.router, prefix="/planogram", tags=["planogram"])
 api_router.include_router(freshness.router, prefix="/freshness", tags=["freshness"])

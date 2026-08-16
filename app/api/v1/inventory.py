@@ -139,6 +139,9 @@ async def scan_from_image(
         latency_ms,
         objects_detected=len(result.detections),
         unresolved=sum(1 for d in detections if not getattr(d, 'sku', None)),
+        detections=detections,
+        image_width=result.image_width,
+        image_height=result.image_height,
     )
 
 
@@ -182,10 +185,16 @@ def _to_response(
     latency_ms: float,
     objects_detected: int = 0,
     unresolved: int = 0,
+    detections: Optional[List] = None,
+    image_width: int = 0,
+    image_height: int = 0,
 ) -> InventoryScanResponse:
     return InventoryScanResponse(
         objects_detected=objects_detected,
         unresolved_detections=unresolved,
+        detections=detections or [],
+        image_width=image_width,
+        image_height=image_height,
         session_uid=session_uid,
         shelf_id=shelf_id,
         total_detected=sum(row.detected_count for row in logs),

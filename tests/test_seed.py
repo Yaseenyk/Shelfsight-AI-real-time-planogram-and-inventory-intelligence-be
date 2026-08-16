@@ -96,7 +96,11 @@ def test_second_boot_changes_nothing(db):  # noqa: ANN001
     second = seed_if_empty(db)
 
     assert first["products"] > 0
-    assert second == {"products": 0, "planograms": 0}
+    # Users joined the seed contract after this test was written. Asserting
+    # "nothing was inserted" rather than an exact dict keeps the test about
+    # idempotency instead of the shape of the return value.
+    assert all(count == 0 for count in second.values())
+    assert set(second) >= {"products", "planograms", "users"}
     assert len(db.execute(select(Product)).scalars().all()) == len(SEED_PRODUCTS)
 
 

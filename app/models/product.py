@@ -28,6 +28,12 @@ class Product(Base, TimestampMixin):
     detection_class_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
     detection_class_name: Mapped[Optional[str]] = mapped_column(String(128), index=True)
 
+    #: EAN/UPC printed on the pack. The checkout scan resolves a product by
+    #: this, so it is the join between a barcode reader and the catalogue.
+    barcode: Mapped[Optional[str]] = mapped_column(String(32), unique=True, index=True)
+    #: Typical units of this product that fit in one shelf row. A starting
+    #: point the manager can override per allocation, since row depth varies.
+    units_per_row: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     unit_price: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     system_stock: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reorder_threshold: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -20,6 +20,12 @@ class ProductBase(BaseModel):
     reorder_threshold: int = Field(default=0, ge=0)
     is_perishable: bool = False
     shelf_life_days: Optional[int] = Field(default=None, ge=0)
+    #: EAN/UPC, used by the checkout scan to resolve a product.
+    barcode: Optional[str] = None
+    #: Typical units of this product that fit in one shelf row. Sent to the
+    #: dashboard so the allocation form can pre-fill a capacity instead of
+    #: asking the manager to invent a number.
+    units_per_row: int = Field(default=20, ge=1)
 
 
 class ProductCreate(ProductBase):
@@ -37,6 +43,8 @@ class ProductUpdate(BaseModel):
     reorder_threshold: Optional[int] = Field(default=None, ge=0)
     is_perishable: Optional[bool] = None
     shelf_life_days: Optional[int] = Field(default=None, ge=0)
+    barcode: Optional[str] = None
+    units_per_row: Optional[int] = Field(default=None, ge=1)
 
 
 class ProductRead(ORMModel, ProductBase):
